@@ -288,16 +288,65 @@ GMGN_READONLY_API_KEY=replace_with_readonly_credential
 
 ## 8. 远程日常任务
 
-当前用户要求：本机不运行 18:00 或每小时策略任务。远程节点可运行日报和研究任务。
+当前用户要求：本机不运行 18:00 或每小时策略任务。远程节点是唯一运行的纸面研究节点，承担原本的每小时巡检、日报和研究任务。
 
-建议先只启用这两个远程任务：
+启用以下远程任务：
 
-1. **每天 02:00 北京时间**：数据质量和测试任务。
-2. **每天 18:00 北京时间**：治理、日报和 Grok Bot 中文摘要。
+1. **每小时第 03 分钟（北京时间）**：公开数据更新与三账本纸面巡检。
+2. **每天 02:00 北京时间**：数据质量和测试任务。
+3. **每天 18:00 北京时间**：治理、日报和 Grok Bot 中文摘要。
 
-在 GMGN 处于 fixture 或 API 未确认阶段，不要启动高频抓取或每小时实际数据轮询。
+### 8.1 每小时三账本巡检（替代已关闭的本机 ZCode 任务）
 
-### 8.1 每日质量检查
+已关闭的本机任务为“每小时虚拟操盘巡检(三账本:OKX+方向+Polymarket)”，执行时点是每小时第 `03` 分钟。远程节点必须使用仓库内的 systemd 模板替代它，不能再在本机创建 ZCode 定时任务。
+
+该任务在一个 `flock` 锁内按顺序运行：
+
+```text
+collector.py update       # OKX 等公开数据增量更新
+carry_trader.py run       # OKX funding carry 独立纸面账本
+paper_trader.py run       # BTC 方向独立纸面账本
+polymarket_data.py        # 修复过滤器后的只读市场观察
+polymarket_paper.py       # Polymarket 观察账本，不提交交易
+```
+
+边界：
+
+- Carry 仍为 `observe_only`，负净 Edge 时保持空仓是正常结果。
+- BTC 当前运行的是退休的 `v0_full` 历史基准，不能将其 PnL 视为 `trend_only` 的验证结果。
+- Polymarket 仍为 `paused`；小时任务只累计修复过滤器后的有效市场观察，旧 Hegseth 样本不计入业绩或样本门槛。
+- **不运行 `gmgn_copy_paper.py run`**。GMGN 只有在官方文档、只读权限、API 契约、分页和延迟语义均确认后，才以单独的已批准节奏启动。
+- 脚本锁冲突时会以退出码 `75` 正常跳过并留有 systemd 日志，不允许两个账本写入进程并发运行。
+
+远程安装：
+
+```bash
+cd /opt/crypto-quant/app
+git pull --ff-only
+chmod +x scripts/hourly_observe.sh
+sudo install -m 644 systemd/crypto-quant-hourly-observe.service \
+  /etc/systemd/system/crypto-quant-hourly-observe.service
+sudo install -m 644 systemd/crypto-quant-hourly-observe.timer \
+  /etc/systemd/system/crypto-quant-hourly-observe.timer
+
+# 先手动运行一轮，确认公共数据访问、账本和日志均正常。
+sudo -u quant /opt/crypto-quant/app/scripts/hourly_observe.sh
+journalctl -u crypto-quant-hourly-observe.service -n 100 --no-pager
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now crypto-quant-hourly-observe.timer
+systemctl list-timers crypto-quant-hourly-observe.timer
+```
+
+仓库文件：
+
+```text
+scripts/hourly_observe.sh
+systemd/crypto-quant-hourly-observe.service
+systemd/crypto-quant-hourly-observe.timer
+```
+
+### 8.2 每日质量检查
 
 命令：
 
@@ -612,6 +661,8 @@ python3 --version
    - `/opt/crypto-quant/app/data/`
    - `/opt/crypto-quant/app/.env`，通过安全秘密通道，不通过 Git/聊天。
    - `/etc/systemd/system/crypto-quant-dashboard.service`
+   - `/etc/systemd/system/crypto-quant-hourly-observe.service`
+   - `/etc/systemd/system/crypto-quant-hourly-observe.timer`
    - `/etc/systemd/system/crypto-quant-report.service`
    - `/etc/systemd/system/crypto-quant-report.timer`
    - Tailscale Serve 配置与 tailnet ACL 说明。
@@ -634,6 +685,7 @@ python3 --version
 
 ```bash
 sudo systemctl disable --now crypto-quant-dashboard.service
+sudo systemctl disable --now crypto-quant-hourly-observe.timer
 sudo systemctl disable --now crypto-quant-report.timer
 sudo tailscale serve --https=443 off
 ```
@@ -657,6 +709,7 @@ cd /opt/crypto-quant/app
 
 # 服务状态
 sudo systemctl status crypto-quant-dashboard.service
+sudo systemctl status crypto-quant-hourly-observe.timer
 sudo systemctl status crypto-quant-report.timer
 sudo tailscale serve status
 sudo tailscale status
@@ -666,6 +719,7 @@ curl -I http://127.0.0.1:8888
 
 # 日志
 journalctl -u crypto-quant-dashboard.service -n 100 --no-pager
+journalctl -u crypto-quant-hourly-observe.service -n 100 --no-pager
 tail -n 100 /opt/crypto-quant/logs/daily-report.log
 ```
 

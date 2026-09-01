@@ -1,0 +1,14 @@
+[Unit]
+Description=Crypto quant hourly public-data and paper-observation cycle
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=quant
+WorkingDirectory=/opt/crypto-quant/app
+EnvironmentFile=-/opt/crypto-quant/app/.env
+ExecStart=/opt/crypto-quant/app/scripts/hourly_observe.sh
+SuccessExitStatus=75
+StandardOutput=append:/opt/crypto-quant/logs/hourly-observe.log
+StandardError=append:/opt/crypto-quant/logs/hourly-observe.log

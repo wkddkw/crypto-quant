@@ -1,0 +1,10 @@
+[Unit]
+Description=Run crypto quant hourly observation at minute 03 Beijing time
+
+[Timer]
+OnCalendar=*-*-* *:03:00 Asia/Shanghai
+Persistent=true
+Unit=crypto-quant-hourly-observe.service
+
+[Install]
+WantedBy=timers.target

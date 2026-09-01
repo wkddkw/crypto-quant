@@ -43,6 +43,17 @@ def in_day(rows, start, end, key="observed_at"):
     return [row for row in rows if start <= int(row.get(key, 0) or 0) <= end]
 
 
+def latest_btc_mark(account):
+    """Return the latest paper mark written by paper_trader's live-price cycle."""
+    for row in reversed(account.get("equity_history", [])):
+        try:
+            return float(row["equity"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    cash = account.get("cash")
+    return None if cash is None else float(cash)
+
+
 def strategy_summary(name, root, start, end):
     account, account_error = load_json(root / "account.json")
     status, status_error = load_json(root / "status.json")
@@ -52,12 +63,19 @@ def strategy_summary(name, root, start, end):
     today_events = in_day(events, start, end)
     reasons = Counter(row.get("reason", "unknown") for row in today_decisions if row.get("action") != "open")
     accepted = sum(row.get("action") in ("open", "candidate") for row in today_decisions)
+    cash = account.get("cash")
+    equity = latest_btc_mark(account) if name == "BTC direction" else cash
+    position_value = None
+    if equity is not None and cash is not None:
+        position_value = float(equity) - float(cash)
     return {
         "name": name,
         "status": status.get("status", account.get("status", "uninitialized")),
         "halt_reason": account.get("halt_reason") or status.get("halt_reason"),
-        "equity": account.get("cash"),
-        "initial_equity": account.get("initial_equity"),
+        "cash": cash,
+        "position_value": position_value,
+        "equity": equity,
+        "initial_equity": account.get("initial_equity", 500.0 if name == "BTC direction" and account else None),
         "open_positions": len(account.get("positions", {})) if isinstance(account.get("positions"), dict) else None,
         "signals": len(today_decisions),
         "accepted": accepted,
@@ -88,8 +106,10 @@ def build(day=None):
     for item in summaries:
         equity = "-" if item["equity"] is None else f"${float(item['equity']):.2f}"
         base = "-" if item["initial_equity"] is None else f"${float(item['initial_equity']):.2f}"
+        cash = "-" if item["cash"] is None else f"${float(item['cash']):.2f}"
+        position_value = "-" if item["position_value"] is None else f"${float(item['position_value']):.2f}"
         lines.extend([f"## {item['name']}", f"- 运行状态: **{item['status']}** | 暂停原因: `{item['halt_reason'] or '-'}`",
-                      f"- 账本权益: {equity} / 初始 {base} | 未平仓: `{item['open_positions'] if item['open_positions'] is not None else '-'}`",
+                      f"- 账本权益: {equity} / 初始 {base} | 现金: {cash} | 持仓市值: {position_value} | 未平仓: `{item['open_positions'] if item['open_positions'] is not None else '-'}`",
                       f"- 今日信号/接受/拒绝: `{item['signals']}` / `{item['accepted']}` / `{item['rejected']}` | 事件: `{item['today_events']}`",
                       f"- 主要拒绝原因: `{item['top_rejections'] or '-'}`", f"- 最新数据时间: `{item['updated_at'] or '-'}`"])
         if item["errors"]:

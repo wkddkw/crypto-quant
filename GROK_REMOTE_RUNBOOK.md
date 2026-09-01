@@ -95,76 +95,51 @@ In `gmgn_config.json`, fill the official API contract fields and set `mode` to `
 
 All commands run from `/opt/crypto-quant/app`. They write only local paper data.
 
-### Daily data refresh and strategy cycle
+### Hourly public-data and paper-observation cycle
 
-Use one serialized script so two ledger writers cannot overlap:
+The remote node replaces the deleted local ZCode hourly task at minute `03` of every Beijing hour. It performs the original safe workflow under one cross-process lock:
+
+```text
+collector.py update
+carry_trader.py run
+paper_trader.py run
+polymarket_data.py
+polymarket_paper.py
+```
+
+`polymarket_complete_set` remains governance-paused: its two commands collect repaired-filter observations only and do not claim strategy performance. `gmgn_copy_paper.py run` is intentionally excluded. It remains fixture-only until its official, authorized read-only API contract is configured.
+
+The repository contains installable templates:
+
+```text
+scripts/hourly_observe.sh
+systemd/crypto-quant-hourly-observe.service
+systemd/crypto-quant-hourly-observe.timer
+```
+
+Install and enable them on the remote server:
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
 cd /opt/crypto-quant/app
-
-.venv/bin/python collector.py update
-.venv/bin/python carry_trader.py run
-.venv/bin/python paper_trader.py run
-.venv/bin/python polymarket_data.py
-.venv/bin/python polymarket_paper.py
-.venv/bin/python gmgn_copy_paper.py run
-.venv/bin/python governance.py review
-.venv/bin/python daily_report.py
+git pull --ff-only
+chmod +x scripts/hourly_observe.sh
+sudo install -m 644 systemd/crypto-quant-hourly-observe.service \
+  /etc/systemd/system/crypto-quant-hourly-observe.service
+sudo install -m 644 systemd/crypto-quant-hourly-observe.timer \
+  /etc/systemd/system/crypto-quant-hourly-observe.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now crypto-quant-hourly-observe.timer
+systemctl list-timers crypto-quant-hourly-observe.timer
 ```
 
-Save it as `/opt/crypto-quant/app/scripts/daily_cycle.sh`, make it executable, and run it once manually before scheduling.
-
-Important:
-
-- `collector.py update`, `carry_trader.py run`, `polymarket_paper.py`, and `gmgn_copy_paper.py run` write state. Never run multiple copies in parallel.
-- `gmgn_copy_paper.py` must stay in fixture mode until official API configuration is complete.
-- Polymarket is currently paused in governance. Its collector may run only to validate the repaired market filter; its old sample does not count toward performance.
-- Carry remains observe-only. It may correctly stay empty for months when net edge is negative.
-- The existing BTC paper runner is the retired `v0_full` baseline. Do not claim its paper PnL validates `trend_only`.
-
-### systemd daily cycle
-
-Create `/etc/systemd/system/crypto-quant-cycle.service`:
-
-```ini
-[Unit]
-Description=Crypto quant paper research cycle
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-User=quant
-WorkingDirectory=/opt/crypto-quant/app
-EnvironmentFile=-/opt/crypto-quant/app/.env
-ExecStart=/opt/crypto-quant/app/scripts/daily_cycle.sh
-StandardOutput=append:/opt/crypto-quant/logs/daily-cycle.log
-StandardError=append:/opt/crypto-quant/logs/daily-cycle.log
-```
-
-Create `/etc/systemd/system/crypto-quant-cycle.timer`:
-
-```ini
-[Unit]
-Description=Run crypto quant paper cycle daily
-
-[Timer]
-OnCalendar=*-*-* 08:05:00 Asia/Shanghai
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-Enable it:
+Before enabling the timer, execute and inspect one manual run:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now crypto-quant-cycle.timer
-systemctl list-timers crypto-quant-cycle.timer
+sudo -u quant /opt/crypto-quant/app/scripts/hourly_observe.sh
+journalctl -u crypto-quant-hourly-observe.service -n 100 --no-pager
 ```
+
+The lock intentionally causes an overlapping invocation to exit with code `75`, which systemd records as a successful skipped run rather than letting two ledger writers run concurrently.
 
 ### Daily 18:00 Beijing report
 
@@ -351,12 +326,17 @@ Current strategy states:
 - gmgn_solana_copy: Solana buy-only paper shadow; use fixture mode until a verified, authorized GMGN read-only API contract is configured.
 
 Daily tasks:
-1. Confirm dashboard service and daily-cycle timer health.
+1. Confirm dashboard service, hourly-observe timer, and report timer health.
 2. Run or inspect governance.py review and daily_report.py results.
 3. Check data freshness, errors, stale timestamps, duplicate events, fixture contamination, and account/event inconsistencies.
 4. Produce a Chinese memo with strategy status, paper equity, positions, signal acceptance/rejection, major risks, blocker items, and next review dates.
 5. Propose at most three research hypotheses. Each requires a testable premise, data source, time range, sample target, cost model, and kill criterion.
 6. Do not automatically alter strategy parameters, wallet pools, trading rules, or allocation.
+
+Hourly scheduled workflow:
+1. At minute 03 of every Asia/Shanghai hour, confirm `crypto-quant-hourly-observe.timer` invokes the approved public-data and paper-observation script.
+2. Do not add GMGN polling to this timer before an authorized official API contract is verified.
+3. Treat Polymarket output as paused-strategy observation only.
 
 At 18:00 Asia/Shanghai every day, deliver the paper-strategy report through the bot's configured channel. State clearly that it contains no real transaction result.
 ```
@@ -373,7 +353,7 @@ cd /opt/crypto-quant/app
 .venv/bin/python gmgn_copy_paper.py status
 curl -I http://127.0.0.1:8888
 systemctl status crypto-quant-dashboard.service
-systemctl status crypto-quant-cycle.timer
+systemctl status crypto-quant-hourly-observe.timer
 ```
 
 Expected safe behavior:

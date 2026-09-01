@@ -20,7 +20,7 @@ python3 -m venv .venv
 ## 虚拟操盘(paper trading)
 
 $500 模拟账户, v0 打分制策略(见 DESIGN.md §14), 只做 BTC 现货 long/flat。
-状态/报告/决策日志在 `data/paper/`。每小时自动巡检一次(采集 → 信号 → 调仓 → 报告)。
+状态/报告/决策日志在 `data/paper/`。远程常驻节点通过 `systemd` 每小时第 03 分钟（北京时间）巡检一次（采集 → 信号 → 调仓 → 报告）；本机不再运行定时任务。远程安装见 [GROK_REMOTE_COMPLETE_GUIDE_CN.md](GROK_REMOTE_COMPLETE_GUIDE_CN.md)。
 
 ## Funding Carry 模拟账本
 
@@ -54,11 +54,11 @@ GMGN 模块是独立的 Solana 链上“聪明钱”纸面跟随研究线。它�
 .venv/bin/python daily_report.py
 ```
 
-日报按北京时间保存为 `data/daily_reports/YYYY-MM-DD.md` 与 JSON，涵盖每个渠道的数据新鲜度、运行错误、信号与拒绝原因、纸面权益/持仓/成本以及策略复核状态。计划中的 ZCode 自动任务会在每天 18:00 北京时间交付同一份摘要。
+日报按北京时间保存为 `data/daily_reports/YYYY-MM-DD.md` 与 JSON，涵盖每个渠道的数据新鲜度、运行错误、信号与拒绝原因、纸面权益/持仓/成本以及策略复核状态。远程节点在每天 18:00 北京时间生成并由 Grok Bot 交付摘要；本机不再运行 ZCode 定时报告。
 
 ## 本地可视化仪表盘
 
-仪表盘只读取本地 `data/` 产物，不访问交易 API、不保存密钥、不下单，也没有重置或策略修改控件。每小时任务仍只负责更新数据和两个独立模拟账本；打开页面后点击刷新即可读取最新落盘结果。
+仪表盘只读取远程节点的 `data/` 产物，不访问交易 API、不保存密钥、不下单，也没有重置或策略修改控件。远程每小时任务只更新公开数据和独立纸面账本；通过 Tailscale 打开页面后刷新即可读取最新落盘结果。
 
 ```bash
 .venv/bin/streamlit run dashboard.py --server.address 0.0.0.0 --server.port 8888
@@ -80,13 +80,7 @@ GMGN 模块是独立的 Solana 链上“聪明钱”纸面跟随研究线。它�
 
 - 交易所公共数据(OKX)和恐惧贪婪指数**必须走本机代理** `127.0.0.1:10808`(config.json 可改);Coin Metrics 直连。
 - 数据落在 `data/*.parquet`;状态报告在 `data/status.md`。
-- 全系统 UTC:OKX 日线收盘 = 北京时间早上 8 点,日常任务建议在北京时间 08:05 跑。
-
-cron 示例(北京 08:05 = UTC 00:05):
-
-```
-5 0 * * * cd /Users/dkw/.zcode/workspace/default/crypto-quant && .venv/bin/python collector.py update >> data/collector.log 2>&1
-```
+- 全系统 UTC:OKX 日线收盘 = 北京时间早上 8 点。远程 scheduler 使用 `systemd` timer，部署步骤见 [GROK_REMOTE_COMPLETE_GUIDE_CN.md](GROK_REMOTE_COMPLETE_GUIDE_CN.md)。
 
 ## 目录
 
