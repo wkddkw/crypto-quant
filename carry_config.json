@@ -1,0 +1,19 @@
+{
+  "proxy": "http://127.0.0.1:10808",
+  "spot_inst": "BTC-USDT",
+  "swap_inst": "BTC-USDT-SWAP",
+  "index_inst": "BTC-USDT",
+  "initial_equity": 500.0,
+  "spot_fee": 0.001,
+  "swap_fee": 0.0005,
+  "slippage": 0.0003,
+  "max_notional_pct": 0.80,
+  "margin_leverage": 2.0,
+  "min_funding_annual_pct": 0.08,
+  "expected_hold_days": 30,
+  "min_net_edge_pct": 0.02,
+  "round_trip_cost_pct": 0.003,
+  "basis_buffer_pct": 0.01,
+  "max_basis_pct": 0.03,
+  "max_data_age_ms": 300000
+}

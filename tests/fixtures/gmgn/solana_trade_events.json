@@ -1,0 +1,28 @@
+{
+  "events": [
+    {
+      "event_id": "sig-a:0",
+      "chain": "solana",
+      "wallet_address": "WalletAlpha111111111111111111111111111111",
+      "executed_at": 4102444800000,
+      "asset_mint": "MintAlpha11111111111111111111111111111111",
+      "asset_symbol": "ALPHA",
+      "side": "buy",
+      "trade_usd": 1200,
+      "price_usd": 2.0,
+      "liquidity_usd": 50000
+    },
+    {
+      "event_id": "sig-b:0",
+      "chain": "solana",
+      "wallet_address": "WalletBeta2222222222222222222222222222222",
+      "executed_at": 4102444800000,
+      "asset_mint": "MintBeta111111111111111111111111111111111",
+      "asset_symbol": "BETA",
+      "side": "sell",
+      "trade_usd": 900,
+      "price_usd": 1.0,
+      "liquidity_usd": 50000
+    }
+  ]
+}

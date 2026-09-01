@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "strategies": [
+    {
+      "strategy_id": "btc_v0_full",
+      "version": "v0_full",
+      "kind": "btc_direction",
+      "status": "retired",
+      "since": "2026-08-30",
+      "review_due": "2026-09-01",
+      "baseline": "historical_only",
+      "promotion_rules": ["No new promotion; retained only as a historical baseline."],
+      "kill_rules": ["Research evidence favors trend_only over the composite rule."],
+      "evidence_paths": ["data/backtest/report.md", "data/backtest/p2_report.md"]
+    },
+    {
+      "strategy_id": "btc_trend_only_shadow",
+      "version": "trend_only_daily",
+      "kind": "btc_direction",
+      "status": "shadow",
+      "since": "2026-09-01",
+      "review_due": "2026-11-24",
+      "baseline": "btc_buy_and_hold",
+      "promotion_rules": ["At least 12 weeks of non-overlapping daily paper observations.", "Net return no worse than same-day BTC buy-and-hold.", "Drawdown less than half of buy-and-hold.", "Final frozen 12-month OOS Sharpe above buy-and-hold."],
+      "kill_rules": ["Material 12-week underperformance without a data or cost explanation.", "Frozen OOS Sharpe not above baseline with no drawdown improvement."],
+      "evidence_paths": ["data/backtest/summary.csv", "data/backtest/p2_report.md"]
+    },
+    {
+      "strategy_id": "okx_funding_carry",
+      "version": "carry_paper_v1",
+      "kind": "funding_carry",
+      "status": "observe_only",
+      "since": "2026-08-31",
+      "review_due": "2027-02-28",
+      "baseline": "cash",
+      "promotion_rules": ["At least 6 months of OKX funding data and 30 conservative eligible observations.", "At least 20 full paper round trips with positive net expectancy after conservative costs.", "Reconciled account, event, and funding ledgers."],
+      "kill_rules": ["No conservative positive-edge opportunity after 6 months.", "20 round trips have non-positive expectancy or unreconciled ledger state."],
+      "evidence_paths": ["data/carry/report.md", "data/carry_replay/report.md"]
+    },
+    {
+      "strategy_id": "polymarket_complete_set",
+      "version": "complete_set_v1",
+      "kind": "prediction_market",
+      "status": "paused",
+      "since": "2026-08-31",
+      "review_due": "2026-12-31",
+      "baseline": "no_trade",
+      "promotion_rules": ["At least 500 correct, expired BTC/ETH 15-minute markets.", "95% confidence lower bound of net complete-set edge is positive after costs.", "Fill and API failure rates stay within the configured limits."],
+      "kill_rules": ["No positive net-edge candidates after 500 valid markets.", "Net edge disappears after depth, latency, and one-leg risk modelling."],
+      "evidence_paths": ["data/polymarket/status.json", "data/polymarket/quotes.jsonl"]
+    },
+    {
+      "strategy_id": "gmgn_solana_copy",
+      "version": "gmgn_solana_paper_v1",
+      "kind": "onchain_smart_money",
+      "status": "shadow",
+      "since": "2026-09-01",
+      "review_due": "2026-10-13",
+      "baseline": "no_trade",
+      "promotion_rules": ["GMGN official API contract, permissions, and data latency verified.", "At least 100 independent accepted buy signals and 30 calendar days of complete snapshots.", "Paper net PnL stays positive after fee, gas, and slippage assumptions.", "No unresolved duplicate, stale, or incomplete source-data incidents."],
+      "kill_rules": ["API contract is unavailable or does not permit automated monitoring.", "100 accepted signals have non-positive net PnL, excessive latency, or unreconciled events."],
+      "evidence_paths": ["data/gmgn_solana_paper/report.md", "data/gmgn_solana_paper/status.json"]
+    }
+  ]
+}

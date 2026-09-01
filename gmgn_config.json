@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "mode": "fixture",
+  "proxy": "http://127.0.0.1:10808",
+  "http": {"timeout_sec": 25, "max_attempts": 5, "backoff_sec": 1.5},
+  "gmgn": {
+    "base_url": null,
+    "api_version": null,
+    "auth": {"credential_env": null, "header_name": null, "header_prefix": null},
+    "ranking_contract": {"endpoint": null, "chain_parameter": null, "period_parameter": null, "score_field": null},
+    "trade_feed_contract": {"endpoint": null, "wallet_parameter": null, "since_parameter": null, "event_id_field": null}
+  },
+  "universe": {"chain": "solana", "daily_rank_limit": 100, "ranking_period": "30d", "selection_time_utc": "00:05"},
+  "paper": {
+    "initial_equity_usd": 500.0,
+    "max_trade_pct": 0.01,
+    "max_wallet_exposure_pct": 0.05,
+    "max_asset_exposure_pct": 0.05,
+    "max_total_exposure_pct": 0.30,
+    "max_open_positions": 20,
+    "min_trade_usd": 100.0,
+    "min_liquidity_usd": 10000.0,
+    "max_event_age_sec": 300,
+    "cooldown_sec": 900,
+    "fee_pct": 0.005,
+    "slippage_pct": 0.01,
+    "gas_usd": 0.05,
+    "allow_sells": false,
+    "kill_switch": false,
+    "fail_closed": true,
+    "paper_only": true
+  },
+  "fixture": {
+    "ranking_path": "tests/fixtures/gmgn/solana_top100.json",
+    "trade_events_path": "tests/fixtures/gmgn/solana_trade_events.json"
+  }
+}

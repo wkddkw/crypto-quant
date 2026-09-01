@@ -1,0 +1,18 @@
+{
+  "proxy": "http://127.0.0.1:10808",
+  "gamma_url": "https://gamma-api.polymarket.com",
+  "clob_url": "https://clob.polymarket.com",
+  "market_limit": 100,
+  "max_markets": 20,
+  "max_market_duration_sec": 1800,
+  "quote_max_age_ms": 10000,
+  "initial_equity": 500.0,
+  "max_stake_pct": 0.10,
+  "min_gross_edge": 0.005,
+  "min_net_edge": 0.002,
+  "fee_pct": 0.002,
+  "gas_usd": 0.05,
+  "slippage_pct": 0.001,
+  "temporal_enabled": false,
+  "kill_switch": false
+}

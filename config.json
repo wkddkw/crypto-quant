@@ -1,0 +1,8 @@
+{
+  "proxy": "http://127.0.0.1:10808",
+  "pause_sec": 0.18,
+  "spot": ["BTC-USDT", "ETH-USDT"],
+  "swap": ["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+  "deribit": ["BTC-PERPETUAL", "ETH-PERPETUAL"],
+  "cm_assets": ["btc", "eth"]
+}

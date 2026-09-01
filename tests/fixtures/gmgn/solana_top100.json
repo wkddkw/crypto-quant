@@ -1,0 +1,7 @@
+{
+  "source": "gmgn_fixture",
+  "wallets": [
+    {"wallet_address": "WalletAlpha111111111111111111111111111111", "rank": 1, "score": 95.2},
+    {"wallet_address": "WalletBeta2222222222222222222222222222222", "rank": 2, "score": 88.4}
+  ]
+}
