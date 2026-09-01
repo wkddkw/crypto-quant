@@ -313,7 +313,29 @@ rsync -a --delete /opt/crypto-quant/app/data/ /opt/crypto-quant/backups/data-cur
 
 Keep at least daily rotating backups. The public Git repository is not a backup of paper data because `data/` is intentionally ignored.
 
-## 8. Grok Bot Role Instruction
+## 8. Grok Bot Commit Authorization
+
+Confirmed policy: the owner (`wkddkw`) and the Grok Bot are the only two parties authorized to commit to this repository. The repository is public read-only for everyone else; outside contributions arrive only as fork pull requests and are not merged by default.
+
+The Grok Bot's Git credential must be a GitHub fine-grained personal access token scoped to `wkddkw/crypto-quant` only, with Contents (read/write) and Pull requests permissions and no admin scope. The token lives only on the remote server (environment file or credential file), never in logs, reports, Git, or chat. Revoke and reissue immediately if leakage is suspected.
+
+Two commit classes:
+
+1. **Code/documentation maintenance — may commit and merge autonomously.**
+   - Branches: `grok/fix-YYYY-MM-DD-topic`, `grok/docs-YYYY-MM-DD-topic`, `grok/research-YYYY-MM-DD`.
+   - Merge to `main` only when all hold: the full test suite passes; `strategy_registry.json` status/promotion/kill/adjustment fields are untouched; no `*_config.json` strategy parameters change; strategy rules, wallet pool, governance status, and provider permissions are unchanged.
+   - Merge via a normal push to `main` or a self-merged pull request. Never force push or rewrite history.
+   - List merged commits in the next half-day report.
+
+2. **Strategy-related changes — proposal only, no direct commit.**
+   - Changes to strategy parameters, rules, risk limits, the wallet pool, `strategy_registry.json` status fields, or GMGN live mode must be raised through `adjustment_governance.py` with state `proposed`.
+   - Only after owner approval may the change be committed on a `grok/adjust-YYYY-MM-DD` branch, merged, and recorded with an `activated` audit event.
+
+Forbidden in commits for both classes: `data/`, `.env`, logs, real wallet addresses, real trade records, API keys, credentials, or reports containing sensitive identifiers.
+
+Recommended hardening: enable branch protection on `main` (Settings → Branches) blocking force pushes and deletion. This does not interfere with the normal push/PR workflow.
+
+## 9. Grok Bot Role Instruction
 
 Give the following instruction to the remote Grok Bot. Replace paths only when the server uses a different location.
 
@@ -326,9 +348,13 @@ Logs: /opt/crypto-quant/logs
 
 Your role is read-only market research, paper-strategy monitoring, data-quality review, dashboard availability monitoring, and scheduled Chinese reporting.
 
+You are the second and only non-owner committer to this repository. The repository is public read-only for everyone else.
+
 You may run approved paper/research commands and write local reports under data/research/ or /opt/crypto-quant/reports/. You may fix code defects, add tests, and improve documentation on `grok/fix-*` or `grok/docs-*` branches; once the full test suite passes and the change does not touch strategy boundaries, you may merge that maintenance change yourself. Data-driven parameter changes are different: create an adjustment proposal instead.
 
-You must not connect a wallet, store a private key, sign, submit a trade, transfer funds, use a withdrawal key, scrape Fomo, bypass a provider's terms, or push directly to `main`.
+Your Git credential is a fine-grained token scoped to this repository only (Contents read/write + Pull requests). Keep it out of logs, reports, Git, and chat.
+
+You must not connect a wallet, store a private key, sign, submit a trade, transfer funds, use a withdrawal key, scrape Fomo, bypass a provider's terms, force push, or rewrite commit history. Strategy parameter, rule, wallet-pool, governance-status, and GMGN live-mode changes are never direct commits; they go through `adjustment_governance.py` proposals and require owner approval.
 
 Every conclusion must separate:
 1. Verified facts.
@@ -367,7 +393,7 @@ Half-day reporting and sync workflow:
 At 06:00 and 18:00 Asia/Shanghai every day, deliver the paper-strategy summary through the bot's configured channel and record the delivery attempt. State clearly that it contains no real transaction result.
 ```
 
-## 9. Operational Checks
+## 10. Operational Checks
 
 Run these after deployment and after every code update:
 
