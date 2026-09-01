@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from gmgn_adapter import AdapterBlocked, list_trade_events, rank_wallets
 from gmgn_models import ValidationError
+from runtime_provenance import provenance
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data" / "gmgn_solana_paper"
@@ -231,6 +232,7 @@ def write_report(account, status):
 
 def run_once(observed_at=None):
     observed_at = now_ms() if observed_at is None else observed_at
+    prov = provenance("gmgn_solana_copy", ROOT / "gmgn_config.json", run_id=f"gmgn:{observed_at}")
     account = load_account()
     day = beijing_day(observed_at)
     try:
@@ -239,7 +241,8 @@ def run_once(observed_at=None):
         account["wallet_pool_date"] = day
         account["wallet_pool_size"] = len(wallets)
         status = {"updated_at": observed_at, "mode": CONFIG["mode"], "status": "ok", "pool_created": created,
-                  "pool_complete": pool["complete"], "signals": 0, "accepted": 0, "rejected": 0, "errors": []}
+                  "pool_complete": pool["complete"], "signals": 0, "accepted": 0, "rejected": 0, "errors": [],
+                  **prov}
         if CONFIG["paper"]["kill_switch"]:
             account["status"] = "halt"
             account["halt_reason"] = "kill_switch"
@@ -254,7 +257,7 @@ def run_once(observed_at=None):
                 action, reason = decision(account, event, wallets, observed_at)
                 result = {"observed_at": observed_at, "event_id": event.event_id, "wallet_address": event.wallet_address,
                           "asset_mint": event.asset_mint, "action": action, "reason": reason,
-                          "latency_ms": observed_at - event.executed_at}
+                          "latency_ms": observed_at - event.executed_at, **prov}
                 append_jsonl(DECISIONS, result)
                 account["processed_event_ids"].append(event.event_id)
                 if action == "open":
@@ -267,7 +270,7 @@ def run_once(observed_at=None):
         account["status"] = "halt"
         account["halt_reason"] = str(exc)
         status = {"updated_at": observed_at, "mode": CONFIG["mode"], "status": "blocked_config" if str(exc).startswith("blocked_config") else "upstream_error",
-                  "signals": 0, "accepted": 0, "rejected": 0, "errors": [str(exc)]}
+                  "signals": 0, "accepted": 0, "rejected": 0, "errors": [str(exc)], **prov}
     current_equity = equity(account)
     account["equity_history"].append({"ts": observed_at, "equity": current_equity, "status": account["status"]})
     account["equity_history"] = account["equity_history"][-5000:]

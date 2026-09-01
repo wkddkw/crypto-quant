@@ -17,6 +17,8 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+from runtime_provenance import provenance
+
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 CARRY = DATA / "carry"
@@ -269,6 +271,7 @@ def age_text(ms):
 
 
 def run_once():
+    prov = provenance("okx_funding_carry", ROOT / "carry_config.json")
     a = load_account()
     try:
         s = market_snapshot()
@@ -301,10 +304,11 @@ def run_once():
         a["halt_reason"] = None
     spot_pnl, swap_pnl, basis_pnl, equity = mark(a, s)
     event_key = f"mark:{s['observed_at']}"
-    append_jsonl(EVENTS, {"type": "mark", "event_id": event_key, **s,
+    append_jsonl(EVENTS, {"type": "mark", "event_id": event_key, **prov, **s,
                           "status": a["status"], "equity": equity,
                           "basis_pnl": basis_pnl, "funding_cash": funding_cash})
     a["last_snapshot_ts"] = s["observed_at"]
+    a["provenance"] = prov
     a["equity_history"].append({"ts": s["observed_at"], "equity": equity, "basis_pnl": basis_pnl,
                                  "funding": funding_cash, "status": a["status"]})
     a["equity_history"] = a["equity_history"][-5000:]

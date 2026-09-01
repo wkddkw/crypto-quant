@@ -141,33 +141,52 @@ journalctl -u crypto-quant-hourly-observe.service -n 100 --no-pager
 
 The lock intentionally causes an overlapping invocation to exit with code `75`, which systemd records as a successful skipped run rather than letting two ledger writers run concurrently.
 
-### Daily 18:00 Beijing report
+### Daily 06:00/18:00 Beijing reports and sync packages
 
-The daily cycle already creates `data/daily_reports/YYYY-MM-DD.md` and `.json`. Create a separate report job at 18:00 Beijing time so it refreshes governance and sends the owner a summary through the Grok Bot's approved delivery channel.
+The repository ships tracked report scheduling. Each slot runs governance review, writes an immutable slot snapshot, and writes a half-day sync package used by the owner and the local ZCode session:
 
-The report job must run:
+```text
+scripts/scheduled_report.sh                       # locked report entrypoint
+systemd/crypto-quant-report@.service              # templated oneshot service
+systemd/crypto-quant-report-0600.timer            # 06:00 Asia/Shanghai
+systemd/crypto-quant-report-1800.timer            # 18:00 Asia/Shanghai
+```
+
+Outputs per slot:
+
+```text
+data/daily_reports/YYYY-MM-DDT0600+0800.md/.json
+data/daily_reports/YYYY-MM-DDT1800+0800.md/.json
+data/daily_reports/YYYY-MM-DD.md/.json            # date report stays current at 18:00
+data/sync/YYYY-MM-DDTHHMM+0800.md/.json           # half-day sync package
+data/governance/delivery_audit.jsonl              # append-only delivery audit
+```
+
+Install and enable:
 
 ```bash
 cd /opt/crypto-quant/app
-.venv/bin/python governance.py review
-.venv/bin/python daily_report.py
+git pull --ff-only
+chmod +x scripts/scheduled_report.sh
+sudo install -m 644 systemd/crypto-quant-report@.service \
+  /etc/systemd/system/crypto-quant-report@.service
+sudo install -m 644 systemd/crypto-quant-report-0600.timer \
+  /etc/systemd/system/crypto-quant-report-0600.timer
+sudo install -m 644 systemd/crypto-quant-report-1800.timer \
+  /etc/systemd/system/crypto-quant-report-1800.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now crypto-quant-report-0600.timer crypto-quant-report-1800.timer
+systemctl list-timers 'crypto-quant-report-*'
 ```
 
-It must then read:
+Verify one slot manually:
 
-```text
-data/daily_reports/YYYY-MM-DD.md
-data/governance/report.md
+```bash
+sudo -u quant /opt/crypto-quant/app/scripts/scheduled_report.sh 0600
+journalctl -u 'crypto-quant-report@*' -n 100 --no-pager
 ```
 
-and produce a concise Chinese report containing:
-
-- Strategy status, paper equity, open positions, accepted/rejected signals, and main rejection reasons.
-- Freshness, upstream errors, blocked configuration, and data-integrity warnings.
-- Carry, Polymarket, GMGN, and BTC governance conclusion plus review date.
-- Explicit note that all figures are research or paper figures and no real transaction was submitted.
-
-Use the remote Grok Bot's native scheduler/delivery mechanism for this final step. Do not configure a notification URL or credential in the public repository.
+After each slot completes, the remote bot reads the newest `data/sync/*.md` and `data/daily_reports/*.md` and delivers a concise Chinese summary through its own configured channel, then appends one record to `data/governance/delivery_audit.jsonl` (channel alias, sync_id, outcome, message id, error class). Tokens, webhook URLs, and chat IDs never enter the repository or the audit file. Failed deliveries retry with bounded backoff; a final failure is disclosed in the next report.
 
 ## 6. Private Tailscale Access and Read-only Dashboard
 
@@ -307,9 +326,9 @@ Logs: /opt/crypto-quant/logs
 
 Your role is read-only market research, paper-strategy monitoring, data-quality review, dashboard availability monitoring, and scheduled Chinese reporting.
 
-You may run approved paper/research commands and write local reports under data/research/ or /opt/crypto-quant/reports/. You may update code only on a separate Git branch, run tests, and prepare a pull request or a patch for review.
+You may run approved paper/research commands and write local reports under data/research/ or /opt/crypto-quant/reports/. You may fix code defects, add tests, and improve documentation on `grok/fix-*` or `grok/docs-*` branches; once the full test suite passes and the change does not touch strategy boundaries, you may merge that maintenance change yourself. Data-driven parameter changes are different: create an adjustment proposal instead.
 
-You must not connect a wallet, store a private key, sign, submit a trade, transfer funds, use a withdrawal key, scrape Fomo, bypass a provider's terms, or modify the main branch without review.
+You must not connect a wallet, store a private key, sign, submit a trade, transfer funds, use a withdrawal key, scrape Fomo, bypass a provider's terms, or push directly to `main`.
 
 Every conclusion must separate:
 1. Verified facts.
@@ -338,7 +357,14 @@ Hourly scheduled workflow:
 2. Do not add GMGN polling to this timer before an authorized official API contract is verified.
 3. Treat Polymarket output as paused-strategy observation only.
 
-At 18:00 Asia/Shanghai every day, deliver the paper-strategy report through the bot's configured channel. State clearly that it contains no real transaction result.
+Half-day reporting and sync workflow:
+1. systemd timers generate slot snapshots and sync packages at 06:00 and 18:00 Asia/Shanghai.
+2. After each slot, deliver the Chinese summary from the newest `data/sync/*.md` through your configured channel.
+3. Append a delivery-audit record to `data/governance/delivery_audit.jsonl` for every attempt (channel alias, sync_id, outcome, error class; never credentials).
+4. Runtime protection (rejecting bad signals, halting new paper decisions on upstream failure) is automatic and must be recorded with reason, config hash, and Git revision in the strategy ledger.
+5. Parameter/rule/wallet-pool/status changes are proposal-only via `adjustment_governance.py`; automation may only create `proposed` records and expire stale ones. `approved`/`activated` states require an owner-approved reviewed Git change.
+
+At 06:00 and 18:00 Asia/Shanghai every day, deliver the paper-strategy summary through the bot's configured channel and record the delivery attempt. State clearly that it contains no real transaction result.
 ```
 
 ## 9. Operational Checks

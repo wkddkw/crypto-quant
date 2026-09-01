@@ -367,84 +367,96 @@ cd /opt/crypto-quant/app
 - 账户、事件、结算账本是否一致。
 - Dashboard 服务和 Tailscale Serve 是否健康。
 
-### 8.2 每日 18:00 报告
+### 8.2 半日报告与同步包（06:00 / 18:00 北京时间）
 
-报告命令：
-
-```bash
-cd /opt/crypto-quant/app
-.venv/bin/python governance.py review
-.venv/bin/python daily_report.py
-```
-
-生成：
+仓库内置报告脚本和 systemd 模板，分别在每天 06:00 与 18:00 北京时间生成治理审查、时间槽快照和半日同步包：
 
 ```text
-data/daily_reports/YYYY-MM-DD.md
-data/daily_reports/YYYY-MM-DD.json
-data/governance/report.md
-data/governance/status.json
+scripts/scheduled_report.sh                        # 报告入口，等待小时巡检锁后运行
+systemd/crypto-quant-report@.service               # 模板化 oneshot 服务
+systemd/crypto-quant-report-0600.timer             # 06:00 Asia/Shanghai
+systemd/crypto-quant-report-1800.timer             # 18:00 Asia/Shanghai
 ```
 
-Grok Bot 通过其自身支持的定时与通知方式交付中文摘要。不要把通知 token、Webhook 或 chat ID 提交到仓库。
+生成产物：
 
-### 8.3 systemd 报告服务和 Timer 模板
+```text
+data/daily_reports/YYYY-MM-DDT0600+0800.md/.json   # 06:00 不可覆盖快照
+data/daily_reports/YYYY-MM-DDT1800+0800.md/.json   # 18:00 不可覆盖快照
+data/daily_reports/YYYY-MM-DD.md/.json             # 当日日报（18:00 时最新）
+data/sync/YYYY-MM-DDTHHMM+0800.md/.json            # 半日同步包（本会话与所有者读取）
+data/governance/status.json                        # 治理状态
+data/governance/delivery_audit.jsonl               # 投递审计（不记录 token/chat ID）
+```
 
-创建 `/opt/crypto-quant/app/scripts/grok_daily_report.sh`：
+远程安装：
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
 cd /opt/crypto-quant/app
-.venv/bin/python governance.py review
-.venv/bin/python daily_report.py
-
-# 此处由 Grok Bot 自己的发送能力读取当天 Markdown 并交付摘要。
-# 不在此仓库中保存 webhook、bot token 或 chat ID。
-```
-
-```bash
-chmod +x /opt/crypto-quant/app/scripts/grok_daily_report.sh
-```
-
-创建 `/etc/systemd/system/crypto-quant-report.service`：
-
-```ini
-[Unit]
-Description=Crypto quant governance and daily paper report
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-User=quant
-WorkingDirectory=/opt/crypto-quant/app
-ExecStart=/opt/crypto-quant/app/scripts/grok_daily_report.sh
-StandardOutput=append:/opt/crypto-quant/logs/daily-report.log
-StandardError=append:/opt/crypto-quant/logs/daily-report.log
-```
-
-创建 `/etc/systemd/system/crypto-quant-report.timer`：
-
-```ini
-[Unit]
-Description=Generate crypto quant report at 18:00 Asia/Shanghai
-
-[Timer]
-OnCalendar=*-*-* 18:00:00 Asia/Shanghai
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-启用：
-
-```bash
+git pull --ff-only
+chmod +x scripts/scheduled_report.sh
+sudo install -m 644 systemd/crypto-quant-report@.service \
+  /etc/systemd/system/crypto-quant-report@.service
+sudo install -m 644 systemd/crypto-quant-report-0600.timer \
+  /etc/systemd/system/crypto-quant-report-0600.timer
+sudo install -m 644 systemd/crypto-quant-report-1800.timer \
+  /etc/systemd/system/crypto-quant-report-1800.timer
 sudo systemctl daemon-reload
-sudo systemctl enable --now crypto-quant-report.timer
-systemctl list-timers crypto-quant-report.timer
+sudo systemctl enable --now crypto-quant-report-0600.timer crypto-quant-report-1800.timer
+systemctl list-timers 'crypto-quant-report-*'
 ```
+
+手动验证一轮：
+
+```bash
+sudo -u quant /opt/crypto-quant/app/scripts/scheduled_report.sh 0600
+journalctl -u 'crypto-quant-report@*' -n 100 --no-pager
+```
+
+Grok Bot 投递职责：在 06:00 与 18:00 报告生成完成后，读取当天最新 `data/sync/*.md` 与 `data/daily_reports/*.md`，通过自身已配置的通知渠道发送中文摘要，并追加一条 `data/governance/delivery_audit.jsonl` 记录（渠道别名、sync_id、结果、错误类别；不得写入 token、Webhook 或 chat ID）。投递失败时按有界退避重试，最终失败需在下一份报告中标注。
+
+### 8.3 本会话（ZCode）与远程节点的同步方式
+
+- 远程节点每 12 小时产生一个同步包，作为权威进度记录。
+- 本机通过 Tailscale 单向拉取，保持本会话可读取最新进度：
+
+```bash
+rsync -avz quant@crypto-quant-grok:/opt/crypto-quant/app/data/sync/ \
+  /Users/dkw/Documents/crypto-quant-remote/sync/
+rsync -avz quant@crypto-quant-grok:/opt/crypto-quant/app/data/daily_reports/ \
+  /Users/dkw/Documents/crypto-quant-remote/daily_reports/
+rsync -avz quant@crypto-quant-grok:/opt/crypto-quant/app/data/governance/ \
+  /Users/dkw/Documents/crypto-quant-remote/governance/
+```
+
+- 本会话不运行定时推送；在你打开会话时读取最新同步包继续处理。
+- 同步包包含：Git revision、报告哈希、各策略状态与权益、信号/拒绝统计、运行保护事件、待处理调整提案、治理结论。
+
+### 8.4 调整提案与运行保护边界
+
+Grok Bot 基于数据可以做两类事，边界固定如下：
+
+**运行保护（自动执行，必须留痕）**
+
+- 拒绝过期、重复、低流动性、超暴露信号（既有冻结规则已覆盖）。
+- 上游数据异常时不新增纸面决策、保持既有仓位的诚实状态。
+- 对每个保护动作在策略账本与状态中记录原因、时间、配置哈希与 Git revision。
+- 禁止：自动调参、更换钱包池、晋级/暂停策略、改动资金配置、启用 GMGN live。
+
+**调整提案（自动生成，人工批准后生效）**
+
+```bash
+cd /opt/crypto-quant/app
+.venv/bin/python adjustment_governance.py status    # 查看提案状态
+.venv/bin/python adjustment_governance.py expire    # 过期处理
+```
+
+- 提案写入 `data/governance/adjustments/`（proposals/、decisions.jsonl、status.json）。
+- 每个提案必须包含：假设、证据窗口与样本量、成本假设、参数 before/after、配置与注册表哈希、Git commit、测试/回放结果、失效条件、过期时间、回滚引用。
+- 提案状态机：`proposed → validated → approved → activated`，另有 `rejected/expired/superseded/reverted`；自动化只能创建 `proposed` 和执行 `expired`。
+- `strategy_registry.json` 中每条策略的 `adjustment_policy.mode` 当前为 `proposal_only`，且 `adjustable_fields` 为空——任何参数调整都需要先由所有者批准边界，再通过分支/PR 修改注册表。
+- `approved` 后的实际变更走 Git：`grok/adjust-YYYY-MM-DD` 分支 → 测试 → PR → 人工合并 → 远程 `git pull --ff-only` → 记录 `activated` 审计事件。
+- 回滚：`git revert` 原 change commit，重跑测试，记录 `reverted` 事件；纸面账本 `data/` 永不回写或重置。
 
 ---
 
@@ -511,13 +523,16 @@ systemctl list-timers crypto-quant-report.timer
 日志路径：/opt/crypto-quant/logs
 可选研究输出：/opt/crypto-quant/reports
 
-你是研究、数据质量、纸面策略监控、Dashboard 健康检查和每日中文报告协作者。
+你是研究、数据质量、纸面策略监控、Dashboard 健康检查和半日中文报告协作者。
 
 允许：
 - 读取代码、公开配置、测试、公开数据、远程本地 data/ 纸面账本和本地报告。
 - 运行测试、回测、治理、日报、数据质量检查和只读 Dashboard 健康检查。
 - 在官方条款和凭证允许的前提下调用 GMGN 官方只读 API。
-- 在独立 Git 分支提交代码、测试、脱敏 fixture、研究文档和研究提案。
+- 修复代码缺陷、补充测试、完善文档：使用 grok/fix-*、grok/docs-* 等分支和 PR；
+  测试全部通过且不触及策略边界时可自行合并此类代码/文档维护变更。
+- 生成数据驱动的调整提案（adjustment_governance.py，仅 proposed 状态）。
+- 执行既有冻结规则内的运行保护：拒收坏信号、上游异常时不新增纸面决策。
 - 生成 data/research/ 或 /opt/crypto-quant/reports/ 下的研究报告。
 
 禁止：
@@ -525,8 +540,18 @@ systemctl list-timers crypto-quant-report.timer
 - 连接钱包、签名、下单、撤单、转账、真实资金操作。
 - 自动抓取 Fomo 或绕过任何供应商条款、登录、限流和 robots 规则。
 - 修改 Tailscale ACL、添加设备、使用 Tailscale Funnel 或公开 Dashboard。
-- 直接推送 main 分支。
-- 自动调整参数、替换钱包池、改变策略规则、晋级策略或分配资金。
+- 直接推送 main 分支（代码/文档维护 PR 合并后由远程 ff-only 拉取）。
+- 自动调整参数、替换钱包池、改变策略规则、晋级策略或分配资金；
+  这类变更只能走 adjustment_governance.py 提案 + PR + 人工批准。
+- 把提案状态直接改为 approved/activated；批准必须来自所有者。
+
+半日报告与同步（必须执行）：
+1. systemd timer 在 06:00 和 18:00 Asia/Shanghai 生成时间槽快照与同步包。
+2. 每个槽次完成后，读取 data/sync/ 当日最新 .md，通过你的通知渠道发送中文摘要。
+3. 每次投递在 data/governance/delivery_audit.jsonl 追加一条记录：
+   channel_alias、sync_id、outcome、message_id、error_class。
+   绝不写入 token、Webhook 地址或 chat ID。
+4. 投递失败按有界退避重试；最终失败写入审计并在下一份报告说明。
 
 每个结论必须分为：
 1. 已验证事实。
@@ -534,6 +559,12 @@ systemctl list-timers crypto-quant-report.timer
 3. 待验证项。
 4. 数据来源、截止时间与样本量。
 5. 结果类型：fixture、回测、纸面或真实结果。
+
+调整提案纪律：
+- 先有假设和证据，再有提案；证据必须含样本窗口、样本量与保守成本模型。
+- 一个提案只改一个策略的一组相关字段；changes 内不得出现
+  status/capital_allocation/wallet_pool/provider_permissions/mode/kill_switch。
+- 提案 14 天未处理自动过期；被否决的结论不得在 30 天内以相同证据重新提出。
 
 当前策略状态：
 - btc_v0_full：retired，只是历史基准。
@@ -543,10 +574,10 @@ systemctl list-timers crypto-quant-report.timer
 - gmgn_solana_copy：Solana 买入方向的 paper shadow；官方 API 契约未完成前只能 fixture 或 blocked_config。
 
 每天任务：
-1. 检查 Dashboard systemd 服务、Tailscale Serve 和报告 timer。
+1. 检查 Dashboard systemd 服务、Tailscale Serve 和 hourly/report timer。
 2. 检查数据新鲜度、未来时间戳、重复事件、fixture 污染和账本不一致。
 3. 运行或审阅 governance.py review 与 daily_report.py。
-4. 在每天 18:00 Asia/Shanghai 交付中文报告。
+4. 在 06:00 与 18:00 Asia/Shanghai 交付中文摘要并写投递审计。
 5. 提出最多三条研究假设。每条必须包含假设、可测试条件、数据源、时间范围、样本量、成本模型、通过条件和淘汰条件。
 6. 不得直接给出买卖指令，也不得修改任何策略或配置使其自动交易。
 
@@ -592,10 +623,10 @@ git pull --ff-only origin main
 
 ## 12. 本机读取远程数据
 
-本机通过 Tailscale 私有网络从远程**单向拉取**报告：
+本机通过 Tailscale 私有网络从远程**单向拉取**报告和同步包：
 
 ```bash
-mkdir -p /Users/dkw/Documents/crypto-quant-remote/{daily_reports,governance,research}
+mkdir -p /Users/dkw/Documents/crypto-quant-remote/{daily_reports,governance,research,sync}
 
 rsync -avz \
   quant@crypto-quant-grok:/opt/crypto-quant/app/data/daily_reports/ \
@@ -606,9 +637,15 @@ rsync -avz \
   /Users/dkw/Documents/crypto-quant-remote/governance/
 
 rsync -avz \
+  quant@crypto-quant-grok:/opt/crypto-quant/app/data/sync/ \
+  /Users/dkw/Documents/crypto-quant-remote/sync/
+
+rsync -avz \
   quant@crypto-quant-grok:/opt/crypto-quant/app/data/research/ \
   /Users/dkw/Documents/crypto-quant-remote/research/
 ```
+
+最新 `sync/*.md` 是 ZCode 会话与远程节点共享进度的载体：打开会话时给出最新同步包路径，即可继续处理运行保护、调整提案与研究假设。
 
 原则：
 
@@ -663,8 +700,8 @@ python3 --version
    - `/etc/systemd/system/crypto-quant-dashboard.service`
    - `/etc/systemd/system/crypto-quant-hourly-observe.service`
    - `/etc/systemd/system/crypto-quant-hourly-observe.timer`
-   - `/etc/systemd/system/crypto-quant-report.service`
-   - `/etc/systemd/system/crypto-quant-report.timer`
+   - `/etc/systemd/system/crypto-quant-report@.service`
+   - `/etc/systemd/system/crypto-quant-report-0600.timer, crypto-quant-report-1800.timer`
    - Tailscale Serve 配置与 tailnet ACL 说明。
    - `/opt/crypto-quant/logs/` 中必要日志。
 
@@ -686,7 +723,7 @@ python3 --version
 ```bash
 sudo systemctl disable --now crypto-quant-dashboard.service
 sudo systemctl disable --now crypto-quant-hourly-observe.timer
-sudo systemctl disable --now crypto-quant-report.timer
+sudo systemctl disable --now crypto-quant-report-0600.timer crypto-quant-report-1800.timer
 sudo tailscale serve --https=443 off
 ```
 
@@ -710,7 +747,7 @@ cd /opt/crypto-quant/app
 # 服务状态
 sudo systemctl status crypto-quant-dashboard.service
 sudo systemctl status crypto-quant-hourly-observe.timer
-sudo systemctl status crypto-quant-report.timer
+sudo systemctl status "crypto-quant-report@*"
 sudo tailscale serve status
 sudo tailscale status
 
@@ -720,7 +757,7 @@ curl -I http://127.0.0.1:8888
 # 日志
 journalctl -u crypto-quant-dashboard.service -n 100 --no-pager
 journalctl -u crypto-quant-hourly-observe.service -n 100 --no-pager
-tail -n 100 /opt/crypto-quant/logs/daily-report.log
+tail -n 100 /opt/crypto-quant/logs/scheduled-report.log
 ```
 
 安全失败预期：

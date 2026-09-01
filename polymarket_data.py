@@ -7,6 +7,8 @@ from pathlib import Path
 
 import requests
 
+from runtime_provenance import provenance
+
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data" / "polymarket"
 CONFIG = json.loads((ROOT / "polymarket_config.json").read_text())
@@ -112,6 +114,7 @@ def append_jsonl(path, value):
 
 
 def run_once():
+    prov = provenance("polymarket_complete_set", ROOT / "polymarket_config.json")
     DATA.mkdir(parents=True, exist_ok=True)
     observed = 0
     opportunities = 0
@@ -131,11 +134,12 @@ def run_once():
             if action == "candidate":
                 opportunities += 1
             append_jsonl(decisions_path, {"observed_at": quote["observed_at"], "market_id": quote["market_id"],
-                                          "action": action, "gross_edge": quote["gross_edge"], "net_edge": quote["net_edge"]})
+                                          "action": action, "gross_edge": quote["gross_edge"], "net_edge": quote["net_edge"],
+                                          **prov})
         except Exception as exc:
             errors.append(f"{market['market_id']}: {exc}")
     status = {"updated_at": now_ms(), "markets_observed": observed,
-              "opportunities": opportunities, "errors": errors, "paper_only": True}
+              "opportunities": opportunities, "errors": errors, "paper_only": True, **prov}
     (DATA / "status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2) + "\n")
     return status
 

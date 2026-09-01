@@ -1,0 +1,14 @@
+[Unit]
+Description=Crypto quant governance and slot report (06:00/18:00 Asia/Shanghai)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=quant
+WorkingDirectory=/opt/crypto-quant/app
+EnvironmentFile=-/opt/crypto-quant/app/.env
+ExecStart=/opt/crypto-quant/app/scripts/scheduled_report.sh %i
+SuccessExitStatus=75
+StandardOutput=append:/opt/crypto-quant/logs/scheduled-report.log
+StandardError=append:/opt/crypto-quant/logs/scheduled-report.log
