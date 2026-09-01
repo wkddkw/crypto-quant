@@ -529,8 +529,8 @@ cd /opt/crypto-quant/app
 - 读取代码、公开配置、测试、公开数据、远程本地 data/ 纸面账本和本地报告。
 - 运行测试、回测、治理、日报、数据质量检查和只读 Dashboard 健康检查。
 - 在官方条款和凭证允许的前提下调用 GMGN 官方只读 API。
-- 修复代码缺陷、补充测试、完善文档：使用 grok/fix-*、grok/docs-* 等分支和 PR；
-  测试全部通过且不触及策略边界时可自行合并此类代码/文档维护变更。
+- 修复代码缺陷、补充测试、完善文档：使用 grok/fix-*、grok/docs-* 等分支推送并开 PR；
+  测试全部通过且不触及策略边界时提交 PR，由所有者合并（不得自行合并）。
 - 生成数据驱动的调整提案（adjustment_governance.py，仅 proposed 状态）。
 - 执行既有冻结规则内的运行保护：拒收坏信号、上游异常时不新增纸面决策。
 - 生成 data/research/ 或 /opt/crypto-quant/reports/ 下的研究报告。
@@ -540,7 +540,7 @@ cd /opt/crypto-quant/app
 - 连接钱包、签名、下单、撤单、转账、真实资金操作。
 - 自动抓取 Fomo 或绕过任何供应商条款、登录、限流和 robots 规则。
 - 修改 Tailscale ACL、添加设备、使用 Tailscale Funnel 或公开 Dashboard。
-- 直接推送 main 分支（代码/文档维护 PR 合并后由远程 ff-only 拉取）。
+- 直接推送 main 分支（main 已有分支保护；所有合并由所有者完成，远程 ff-only 拉取更新）。
 - 自动调整参数、替换钱包池、改变策略规则、晋级策略或分配资金；
   这类变更只能走 adjustment_governance.py 提案 + PR + 人工批准。
 - 把提案状态直接改为 approved/activated；批准必须来自所有者。
@@ -605,45 +605,46 @@ git pull --ff-only origin main
 
 - 不要在运行账本有未备份数据时执行 `git reset --hard`。
 
-### 11.2 Grok Bot 提交权限（已确认授权）
+### 11.2 Grok Bot 提交权限（最终授权：分支 + PR，所有者合并）
 
-**授权结论：Grok Bot 是本仓库的第二位、也是唯一的非所有者提交者。除所有者 `wkddkw` 和 Grok Bot 外，任何其他人不得向本仓库提交代码。**
+**授权结论：Grok Bot 只有分支与 PR 写权限。它不得直接向 `main` 推送；所有合并由所有者（或在所有者要求下由 ZCode 会话）执行。除所有者 `wkddkw` 外，任何其他人（含 Grok Bot 的自动化流程）不得合并 PR。**
 
 仓库为公开只读：外部用户可以查看、clone、fork，但没有写权限；外部贡献只能通过 fork PR 由所有者审核，默认一律不合并。
 
+`main` 分支保护（已启用）：禁止 force push、禁止删除。Grok Bot 的正常工作流（推分支、开 PR）不受影响，但任何人都无法绕过合并直接改写 `main`。
+
 Grok Bot 的提交分两类：
 
-**A. 代码/文档维护（可自行提交并合并）**
+**A. 代码/文档维护（推分支 + 开 PR，等所有者合并）**
 
 - 分支命名：`grok/fix-YYYY-MM-DD-主题`、`grok/docs-YYYY-MM-DD-主题`、`grok/research-YYYY-MM-DD`。
 - 允许内容：缺陷修复、测试补充、文档完善、无敏感信息的 fixture、脱敏研究摘要。
-- 合并条件（全部满足才可自行合并到 `main`）：
-  1. `python -m unittest discover -s tests` 全部通过；
+- PR 准入条件（不满足不要开 PR）：
+  1. `python -m unittest discover -s tests` 全部通过，并在 PR 中贴出结果；
   2. 不触及 `strategy_registry.json` 的 status/promotion/kill/adjustment 字段；
   3. 不修改任何 `*_config.json` 的策略参数；
   4. 不改变策略规则、钱包池、治理状态或数据提供商权限。
-- 合并方式：本地 merge 到 `main` 后 `git push origin main`，或开 PR 自行合并。
-- 每次合并后在下一份半日报告中列出合并的 commit 清单。
+- PR 内容必须包含：变更目的、影响文件、测试输出、数据截止时间、未提交真实交易声明。
+- 合并由所有者完成（GitHub 网页或指示 ZCode 会话执行）。合并后在下一份半日报告中列出合并的 commit 清单。
 
-**B. 策略相关变更（只能提案，不能直接提交）**
+**B. 策略相关变更（只能提案，不能提交）**
 
 - 涉及策略参数、规则、风险限制、钱包池、`strategy_registry.json` 状态字段、GMGN live 模式的改动：
   - 用 `adjustment_governance.py` 生成提案，状态只能是 `proposed`；
-  - 所有者批准后，才允许以 `grok/adjust-YYYY-MM-DD` 分支提交实际变更并合并；
+  - 所有者批准后，才允许以 `grok/adjust-YYYY-MM-DD` 分支提交实际变更并开 PR；
   - 合并后必须记录 `activated` 审计事件。
 
 **提交红线（两类都适用）**
 
 - 不能提交：`data/`、`.env`、日志、真实钱包地址、真实交易记录、API key、任意凭证、含敏感标识的报告。
 - 提交信息使用英文或中文均可，但必须说明目的与影响范围。
-- 不得 force push、不得删除或改写已有 commit 历史。
+- 不得 force push、不得删除或改写已有 commit 历史（分支保护同时兜底）。
 
 **凭证要求**
 
-- Grok Bot 使用所有者签发的 GitHub fine-grained personal access token：仅授权 `wkddkw/crypto-quant` 单仓库，仅 Contents (read/write) 与 Pull requests 权限，不授予 admin/组织/其他仓库。
+- Grok Bot 使用所有者签发的 GitHub fine-grained personal access token：仅授权 `wkddkw/crypto-quant` 单仓库，仅 Contents (read/write，用于推分支) 与 Pull requests (read/write，用于开 PR) 权限，不授予 admin、不授予其他仓库。
 - token 只存在远程服务器本地（如 `.env` 或凭证文件），不得写入日志、报告、Git 或聊天。
-- token 泄露或疑似泄露时，所有者立即在 GitHub 撤销并换发。
-- 建议：所有者在 GitHub 仓库 Settings → Branches 为 `main` 启用分支保护（禁止 force push 与删除）。该保护不影响正常的 push/PR 流程。
+- token 泄露或疑似泄露时，所有者立即在 GitHub 撤销并换发；即使泄露，攻击者也无法绕过分支保护直接改写 `main`。
 
 ### 11.3 报告不进入公开 Git
 

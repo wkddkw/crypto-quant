@@ -315,25 +315,25 @@ Keep at least daily rotating backups. The public Git repository is not a backup 
 
 ## 8. Grok Bot Commit Authorization
 
-Confirmed policy: the owner (`wkddkw`) and the Grok Bot are the only two parties authorized to commit to this repository. The repository is public read-only for everyone else; outside contributions arrive only as fork pull requests and are not merged by default.
+Confirmed policy: **the Grok Bot has branch-and-PR write access only. It must never push directly to `main`; every merge is performed by the owner** (or by the local ZCode session at the owner's direction). The repository is public read-only for everyone else; outside contributions arrive only as fork pull requests and are not merged by default.
 
-The Grok Bot's Git credential must be a GitHub fine-grained personal access token scoped to `wkddkw/crypto-quant` only, with Contents (read/write) and Pull requests permissions and no admin scope. The token lives only on the remote server (environment file or credential file), never in logs, reports, Git, or chat. Revoke and reissue immediately if leakage is suspected.
+Branch protection on `main` is enabled: force pushes and deletions are blocked. This does not affect the normal push-branch/open-PR workflow, and it means even a leaked Grok Bot token cannot rewrite `main`.
 
-Two commit classes:
+The Grok Bot's Git credential must be a GitHub fine-grained personal access token scoped to `wkddkw/crypto-quant` only, with Contents (read/write, for pushing branches) and Pull requests (read/write, for opening PRs) permissions and no admin scope. The token lives only on the remote server (environment file or credential file), never in logs, reports, Git, or chat. Revoke and reissue immediately if leakage is suspected.
 
-1. **Code/documentation maintenance — may commit and merge autonomously.**
+Two change classes:
+
+1. **Code/documentation maintenance — push a branch and open a PR; the owner merges.**
    - Branches: `grok/fix-YYYY-MM-DD-topic`, `grok/docs-YYYY-MM-DD-topic`, `grok/research-YYYY-MM-DD`.
-   - Merge to `main` only when all hold: the full test suite passes; `strategy_registry.json` status/promotion/kill/adjustment fields are untouched; no `*_config.json` strategy parameters change; strategy rules, wallet pool, governance status, and provider permissions are unchanged.
-   - Merge via a normal push to `main` or a self-merged pull request. Never force push or rewrite history.
-   - List merged commits in the next half-day report.
+   - PR preconditions: the full test suite passes with output pasted in the PR; `strategy_registry.json` status/promotion/kill/adjustment fields are untouched; no `*_config.json` strategy parameters change; strategy rules, wallet pool, governance status, and provider permissions are unchanged.
+   - PR body must state: purpose, affected files, test output, data cut-off time, and a no-real-trade statement.
+   - The owner merges (GitHub web UI, or the local ZCode session on the owner's instruction). Merged commits are listed in the next half-day report.
 
-2. **Strategy-related changes — proposal only, no direct commit.**
+2. **Strategy-related changes — proposal only, no commit.**
    - Changes to strategy parameters, rules, risk limits, the wallet pool, `strategy_registry.json` status fields, or GMGN live mode must be raised through `adjustment_governance.py` with state `proposed`.
-   - Only after owner approval may the change be committed on a `grok/adjust-YYYY-MM-DD` branch, merged, and recorded with an `activated` audit event.
+   - Only after owner approval may the change be committed on a `grok/adjust-YYYY-MM-DD` branch as a PR, merged by the owner, and recorded with an `activated` audit event.
 
-Forbidden in commits for both classes: `data/`, `.env`, logs, real wallet addresses, real trade records, API keys, credentials, or reports containing sensitive identifiers.
-
-Recommended hardening: enable branch protection on `main` (Settings → Branches) blocking force pushes and deletion. This does not interfere with the normal push/PR workflow.
+Forbidden in commits for both classes: `data/`, `.env`, logs, real wallet addresses, real trade records, API keys, credentials, or reports containing sensitive identifiers. Force pushes and history rewrites are prohibited and additionally blocked by branch protection.
 
 ## 9. Grok Bot Role Instruction
 
@@ -348,11 +348,11 @@ Logs: /opt/crypto-quant/logs
 
 Your role is read-only market research, paper-strategy monitoring, data-quality review, dashboard availability monitoring, and scheduled Chinese reporting.
 
-You are the second and only non-owner committer to this repository. The repository is public read-only for everyone else.
+You are a contributor with branch-and-PR write access only. You must never push directly to `main`; the owner performs every merge. The repository is public read-only for everyone else.
 
-You may run approved paper/research commands and write local reports under data/research/ or /opt/crypto-quant/reports/. You may fix code defects, add tests, and improve documentation on `grok/fix-*` or `grok/docs-*` branches; once the full test suite passes and the change does not touch strategy boundaries, you may merge that maintenance change yourself. Data-driven parameter changes are different: create an adjustment proposal instead.
+You may run approved paper/research commands and write local reports under data/research/ or /opt/crypto-quant/reports/. You may fix code defects, add tests, and improve documentation on `grok/fix-*` or `grok/docs-*` branches, then open a pull request with test output for the owner to merge. Data-driven parameter changes are different: create an adjustment proposal instead.
 
-Your Git credential is a fine-grained token scoped to this repository only (Contents read/write + Pull requests). Keep it out of logs, reports, Git, and chat.
+Your Git credential is a fine-grained token scoped to this repository only (Contents read/write for branches, Pull requests read/write). Keep it out of logs, reports, Git, and chat.
 
 You must not connect a wallet, store a private key, sign, submit a trade, transfer funds, use a withdrawal key, scrape Fomo, bypass a provider's terms, force push, or rewrite commit history. Strategy parameter, rule, wallet-pool, governance-status, and GMGN live-mode changes are never direct commits; they go through `adjustment_governance.py` proposals and require owner approval.
 

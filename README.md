@@ -2,7 +2,7 @@
 
 币圈量化复利/套利系统。设计与路线图见 [DESIGN.md](DESIGN.md)。
 
-本仓库公开只读。提交权限仅限所有者 `wkddkw` 与其授权的远程 Grok Bot（授权范围、分支规范与红线见 [GROK_REMOTE_COMPLETE_GUIDE_CN.md](GROK_REMOTE_COMPLETE_GUIDE_CN.md) §11.2 与 [GROK_REMOTE_RUNBOOK.md](GROK_REMOTE_RUNBOOK.md) §8）；外部贡献一律通过 fork PR，默认不合并。
+本仓库公开只读。写入权限仅限所有者 `wkddkw`；授权的远程 Grok Bot 只能推送 `grok/*` 分支并开 PR，所有合并由所有者完成（授权范围、分支规范与红线见 [GROK_REMOTE_COMPLETE_GUIDE_CN.md](GROK_REMOTE_COMPLETE_GUIDE_CN.md) §11.2 与 [GROK_REMOTE_RUNBOOK.md](GROK_REMOTE_RUNBOOK.md) §8）。外部贡献一律通过 fork PR，默认不合并。
 
 ## 快速开始
 
