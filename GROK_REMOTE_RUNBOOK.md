@@ -194,9 +194,34 @@ and produce a concise Chinese report containing:
 
 Use the remote Grok Bot's native scheduler/delivery mechanism for this final step. Do not configure a notification URL or credential in the public repository.
 
-## 6. Read-only Dashboard
+## 6. Private Tailscale Access and Read-only Dashboard
 
-Start the dashboard locally on the server first:
+The remote server does not need a public IP. Join it and the local Mac to the same Tailscale tailnet. Do not use Tailscale Funnel; Funnel makes a service publicly reachable and is outside this project's operating boundary.
+
+### Install and join the remote node
+
+On the remote Linux server:
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --hostname=crypto-quant-grok --ssh
+sudo tailscale status
+```
+
+The `tailscale up` command prints an authentication URL when interactive login is required. Authenticate it with the same Tailscale account/tailnet used by the local Mac. Use a reusable tagged auth key only when you control the tailnet policy and server lifecycle; never put that key in this repository or a Grok prompt.
+
+On the local Mac, install and sign in to the Tailscale client using the same tailnet. Confirm both nodes can reach each other:
+
+```bash
+tailscale status
+ping crypto-quant-grok
+```
+
+Use the MagicDNS name printed by `tailscale status`, or the remote node's `100.x.y.z` Tailscale address if MagicDNS is disabled.
+
+### Start the dashboard privately
+
+Keep Streamlit bound to the loopback interface on the remote node:
 
 ```bash
 cd /opt/crypto-quant/app
@@ -207,14 +232,47 @@ cd /opt/crypto-quant/app
   --browser.gatherUsageStats false
 ```
 
-Never bind Streamlit directly to `0.0.0.0` without an authenticated reverse proxy. Use Tailscale, WireGuard, or an authenticated Nginx/Caddy proxy. The dashboard contains local research and paper-accounting information even though it has no secrets.
+Expose only that local listener to the tailnet using Tailscale Serve:
 
-Example service `/etc/systemd/system/crypto-quant-dashboard.service`:
+```bash
+sudo tailscale serve --bg --https=443 http://127.0.0.1:8888
+sudo tailscale serve status
+```
+
+Open the HTTPS URL shown by `tailscale serve status` from the local Mac. It is reachable only to tailnet members allowed by the tailnet ACL; it is not a public Internet endpoint. To remove the proxy later:
+
+```bash
+sudo tailscale serve --https=443 off
+```
+
+Set Tailscale ACLs so only the owner's local device or an owner group can reach `crypto-quant-grok:443`, and only approved admin devices can SSH to the remote node. Do not grant the Grok Bot ability to modify tailnet ACLs, add devices, or enable Funnel.
+
+### Read remote reports and data from the local Mac
+
+The dashboard reads data on the remote server. For a local copy of selected reports or a backup, use Tailscale SSH/rsync over the private hostname:
+
+```bash
+# Pull reports only; safe for routine local inspection.
+rsync -avz quant@crypto-quant-grok:/opt/crypto-quant/app/data/daily_reports/ \
+  /Users/dkw/Documents/crypto-quant-remote/daily_reports/
+
+# Pull governance and research memos.
+rsync -avz quant@crypto-quant-grok:/opt/crypto-quant/app/data/governance/ \
+  /Users/dkw/Documents/crypto-quant-remote/governance/
+rsync -avz quant@crypto-quant-grok:/opt/crypto-quant/app/data/research/ \
+  /Users/dkw/Documents/crypto-quant-remote/research/
+```
+
+Use one-way remote-to-local pulls for inspection. Do not rsync local `data/` back to the active remote node because that could overwrite its paper ledger. When a full backup is required, first stop the remote cycle or copy to a timestamped local directory without `--delete`.
+
+### Keep the dashboard running with systemd
+
+Create `/etc/systemd/system/crypto-quant-dashboard.service`:
 
 ```ini
 [Unit]
 Description=Crypto quant read-only dashboard
-After=network-online.target
+After=network-online.target tailscaled.service
 Wants=network-online.target
 
 [Service]
@@ -230,7 +288,7 @@ StandardError=append:/opt/crypto-quant/logs/dashboard.log
 WantedBy=multi-user.target
 ```
 
-Enable it:
+Enable and check it:
 
 ```bash
 sudo systemctl daemon-reload
