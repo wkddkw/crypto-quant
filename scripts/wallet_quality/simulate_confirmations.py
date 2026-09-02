@@ -74,8 +74,8 @@ def main():
             if r.get("trade_usd"):
                 curve_ts.append(r["executed_at"])
                 curve_p.append(r["trade_usd"] / r["token_amount"])
-        if len(curve_ts) < 2:
-            continue
+        if len(curve_ts) < int(CONFIG.get("min_curve_points", 5)):
+            continue  # thin fill curve: price model unreliable, skip mint
         for window in CONFIG["windows_min"]:
             wsec = window * 60
             for i, anchor in enumerate(rows):

@@ -26,16 +26,23 @@ from wq_common import CONFIG, DATA, RAW, read_jsonl
 
 
 def load_curves():
-    """mint -> (ts_list, price_list, exact:bool). Exact = from GT candles."""
-    by_mint = defaultdict(list)
+    """mint -> (ts_list, price_list, exact:bool). Exact = from GT candles.
+
+    Fill-derived curves need >= min_curve_points trades to be usable; mints
+    below that (one-shot meme buys) are dropped so they can't pollute the
+    median with a fake "exactly-cost" return. Coverage is reported separately.
+    """
+    minpts = int(CONFIG.get("min_curve_points", 5))
+    raw = defaultdict(list)
     for b in read_jsonl(DATA / "buys.jsonl"):
         if b.get("trade_usd") and b.get("token_amount"):
-            by_mint[b["asset_mint"]].append(
+            raw[b["asset_mint"]].append(
                 (b["executed_at"], b["trade_usd"] / b["token_amount"]))
     curves = {}
-    for mint, pts in by_mint.items():
+    for mint, pts in raw.items():
         pts.sort()
-        curves[mint] = ([p[0] for p in pts], [p[1] for p in pts], False)
+        if len(pts) >= minpts:
+            curves[mint] = ([p[0] for p in pts], [p[1] for p in pts], False)
     for path in RAW.glob("price_*.json"):
         d = json.loads(path.read_text())
         if not d.get("candles"):
@@ -84,10 +91,15 @@ def main():
     horizons = [h * 60 for h in CONFIG["horizons_min"]]
 
     rows = []
+    dropped = {"no_curve": 0, "unpriced": 0}
     for b in read_jsonl(DATA / "buys.jsonl"):
         curve = curves.get(b["asset_mint"])
         t0 = b["executed_at"]
+        if b.get("trade_usd") is None:
+            dropped["unpriced"] += 1
+            continue
         if not curve:
+            dropped["no_curve"] += 1
             continue
         p0 = price_at(curve, t0)
         t_entry = t0 + delay
@@ -107,7 +119,8 @@ def main():
         rows.append(row)
 
     stats = {"n": len(rows), "exact_share": round(
-        sum(1 for r in rows if r["exact_curve"]) / max(len(rows), 1), 3)}
+        sum(1 for r in rows if r["exact_curve"]) / max(len(rows), 1), 3),
+        "coverage": {"usable": len(rows), **dropped}}
     for tag_key, field in (("overall", None), ("rank", "rank_bucket"),
                            ("size", "size_bucket")):
         stats[tag_key] = {}
@@ -138,7 +151,15 @@ def main():
 
     if not args.no_report:
         lines = ["# M1/M2 wallet-quality return distribution", "",
-                 f"events={stats['n']} exact_curve_share={stats['exact_share']}", "",
+                 f"events={stats['n']} exact_curve_share={stats['exact_share']}",
+                 f"coverage: usable={stats['coverage']['usable']} "
+                 f"dropped_no_curve={stats['coverage']['no_curve']} "
+                 f"dropped_unpriced={stats['coverage']['unpriced']}",
+                 "(usable requires >= "
+                 f"{CONFIG.get('min_curve_points', 5)} fill points on the mint "
+                 "or a GeckoTerminal candle track; sub-cost medians with high "
+                 "dropped counts are NOT yet a strategy verdict — they mean "
+                 "price coverage is insufficient)", "",
                  "| stratum | n@1h | med@1h | win@1h | med@24h(delayed) | p90@24h |",
                  "|---|---|---|---|---|---|"]
         for dim in ("overall", "rank", "size"):

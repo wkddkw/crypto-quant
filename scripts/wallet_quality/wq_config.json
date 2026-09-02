@@ -10,8 +10,9 @@
   "ingest": {
     "days": 90,
     "page_size": 50,
-    "max_pages_per_wallet": 40
+    "max_pages_per_wallet": 120
   },
+  "min_curve_points": 5,
   "l1_min_usd": 1500.0,
   "size_strata_usd": [1500, 5000, 20000, 100000],
   "rank_strata": [20, 50, 100],
