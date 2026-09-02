@@ -202,6 +202,13 @@ The `flock` lock is unchanged (`data/.hourly-observe.lock`, exit `75` on content
 
 Public-data HTTP clients honor `CRYPTO_QUANT_NO_PROXY=1` (direct only). Otherwise they try the configured proxy and, on connect/proxy failure, retry once without a proxy and fail closed if both paths fail. This does not edit committed proxy strings in `*_config.json`.
 
+Scheduler self-check (run with every half-day report; record results in the delivery audit):
+
+1. **All three calendars are required**: hourly observe (`:03`), `scheduled_report.sh 0600`, and `scheduled_report.sh 1800` must all be wired to the host scheduler. Hourly-only is not a complete schedule.
+2. **Persistence**: the scheduler must survive container restarts (persistent crontab / container job config). If it is only a timer inside the bot session, note this in `delivery_audit.jsonl` with `error_class=ephemeral_scheduler` and flag it in the next delivery summary.
+3. **Slot verification**: after each report, confirm the newest `data/sync/` package timestamp matches the current slot (today `T0600+0800` or `T1800+0800`).
+4. **Do not backfill missed slots**: rerunning `--slot 0600` later writes data newer than 06:00 under a 06:00 label, faking the time point and polluting the authoritative record. Instead, append one `delivery_audit.jsonl` record (`outcome=missed`, `error_class=missed_slot`, the missed slot as `sync_id`) and disclose the miss in the next Chinese summary delivery.
+
 ## 6. Private Tailscale Access and Read-only Dashboard
 
 The remote server does not need a public IP. Join it and the local Mac to the same Tailscale tailnet. Do not use Tailscale Funnel; Funnel makes a service publicly reachable and is outside this project's operating boundary.

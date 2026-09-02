@@ -424,6 +424,13 @@ systemd **不是**唯一调度方式。Grok Bot 容器等宿主的 PID1 可能�
 
 `flock` 锁不变（`data/.hourly-observe.lock`，冲突退出码 `75`）。禁止 Tailscale Funnel。禁止 Streamlit 监听 `0.0.0.0`，必须 `--server.address 127.0.0.1`。
 
+调度自检（每次半日报告时执行，结果写入投递与审计）：
+
+1. **三个日历缺一不可**：小时巡检（:03）、`scheduled_report.sh 0600`、`scheduled_report.sh 1800` 必须全部挂在宿主调度器上。只配置小时巡检不算完成调度。
+2. **持久性**：调度器必须在容器重启后仍然有效（持久化的 crontab / 容器任务配置）。若仅靠 bot 会话内的定时器实现，须在 `delivery_audit.jsonl` 中以 `error_class=ephemeral_scheduler` 标注，并在下一份投递摘要中提醒所有者。
+3. **槽次核对**：每次报告生成后，核对 `data/sync/` 最新包的时间戳等于当前槽（当天 `T0600+0800` 或 `T1800+0800`）。
+4. **错过的槽不补跑**：`--slot 0600` 事后重跑会用晚于 06:00 的数据生成标着 06:00 的快照，伪装时点、污染权威记录。错过即如实记录：追加一条 `delivery_audit.jsonl`（`outcome=missed`、`error_class=missed_slot`、`sync_id` 填错过的槽），并在下一次投递的中文摘要中说明。
+
 ### 8.3 本会话（ZCode）与远程节点的同步方式
 
 - 远程节点每 12 小时产生一个同步包，作为权威进度记录。
