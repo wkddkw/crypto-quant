@@ -298,7 +298,7 @@ GMGN_READONLY_API_KEY=replace_with_readonly_credential
 
 ### 8.1 每小时三账本巡检（替代已关闭的本机 ZCode 任务）
 
-已关闭的本机任务为“每小时虚拟操盘巡检(三账本:OKX+方向+Polymarket)”，执行时点是每小时第 `03` 分钟。远程节点必须使用仓库内的 systemd 模板替代它，不能再在本机创建 ZCode 定时任务。
+已关闭的本机任务为“每小时虚拟操盘巡检(三账本:OKX+方向+Polymarket)”，执行时点是每小时第 `03` 分钟。有 systemd 的远程节点使用仓库内的 systemd 模板替代它；无 systemd 的宿主见下方说明。不能再在本机创建 ZCode 定时任务。
 
 该任务在一个 `flock` 锁内按顺序运行：
 
@@ -414,6 +414,15 @@ journalctl -u 'crypto-quant-report@*' -n 100 --no-pager
 ```
 
 Grok Bot 投递职责：在 06:00 与 18:00 报告生成完成后，读取当天最新 `data/sync/*.md` 与 `data/daily_reports/*.md`，通过自身已配置的通知渠道发送中文摘要，并追加一条 `data/governance/delivery_audit.jsonl` 记录（渠道别名、sync_id、结果、错误类别；不得写入 token、Webhook 或 chat ID）。投递失败时按有界退避重试，最终失败需在下一份报告中标注。
+
+### 8.2a 无 systemd 的宿主（Grok Bot 容器）
+
+systemd **不是**唯一调度方式。Grok Bot 容器等宿主的 PID1 可能是 `tini`，没有 `systemctl`，仓库内 timer 无法触发。必须由**宿主调度器**在同一日历上运行同一脚本：
+
+- 每小时第 `03` 分钟（Asia/Shanghai）：`scripts/hourly_observe.sh`
+- 每天 `06:00` / `18:00` Asia/Shanghai：`scripts/scheduled_report.sh 0600` 与 `1800`
+
+`flock` 锁不变（`data/.hourly-observe.lock`，冲突退出码 `75`）。禁止 Tailscale Funnel。禁止 Streamlit 监听 `0.0.0.0`，必须 `--server.address 127.0.0.1`。
 
 ### 8.3 本会话（ZCode）与远程节点的同步方式
 
@@ -546,7 +555,7 @@ cd /opt/crypto-quant/app
 - 把提案状态直接改为 approved/activated；批准必须来自所有者。
 
 半日报告与同步（必须执行）：
-1. systemd timer 在 06:00 和 18:00 Asia/Shanghai 生成时间槽快照与同步包。
+1. systemd timer（或无 systemd 宿主上的等价宿主调度）在 06:00 和 18:00 Asia/Shanghai 生成时间槽快照与同步包。
 2. 每个槽次完成后，读取 data/sync/ 当日最新 .md，通过你的通知渠道发送中文摘要。
 3. 每次投递在 data/governance/delivery_audit.jsonl 追加一条记录：
    channel_alias、sync_id、outcome、message_id、error_class。

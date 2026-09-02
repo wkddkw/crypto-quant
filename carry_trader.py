@@ -15,9 +15,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-import requests
 
 from runtime_provenance import provenance
+from http_transport import request_get
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
@@ -30,7 +30,6 @@ FUNDING_LEDGER = CARRY / "funding_ledger.csv"
 REPORT = CARRY / "report.md"
 LOCK = CARRY / ".run.lock"
 CONFIG = json.loads((ROOT / "carry_config.json").read_text())
-PROXIES = {"http": CONFIG["proxy"], "https": CONFIG["proxy"]}
 
 
 def now_ms():
@@ -79,8 +78,9 @@ def append_funding_row(ev):
 
 
 def get(url, params):
-    r = requests.get(url, params=params, proxies=PROXIES, timeout=20,
-                     headers={"User-Agent": "crypto-quant-carry-paper/0.1"})
+    r = request_get(url, params=params, timeout=20,
+                    headers={"User-Agent": "crypto-quant-carry-paper/0.1"},
+                    proxy=CONFIG["proxy"])
     r.raise_for_status()
     j = r.json()
     if str(j.get("code")) not in ("0", "200", "None"):
