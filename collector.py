@@ -22,12 +22,13 @@ import numpy as np
 import pandas as pd
 import requests
 
+from http_transport import request_get
+
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 DATA.mkdir(exist_ok=True)
 CFG = json.loads((ROOT / "config.json").read_text())
 
-PROXIES = {"http": CFG["proxy"], "https": CFG["proxy"]}
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
 PAUSE = float(CFG.get("pause_sec", 0.18))
 DAY_MS = 86_400_000
@@ -45,9 +46,8 @@ def http_get(url, params=None, use_proxy=True):
     last = None
     for i in range(5):
         try:
-            r = requests.get(url, params=params, timeout=25,
-                             proxies=PROXIES if use_proxy else None,
-                             headers=HEADERS)
+            r = request_get(url, params=params, timeout=25, headers=HEADERS,
+                            proxy=CFG["proxy"], use_proxy=use_proxy)
             if r.status_code == 200:
                 return r
             last = "HTTP %s %s" % (r.status_code, r.text[:150])

@@ -25,7 +25,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import requests
+
+from http_transport import request_get
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
@@ -34,7 +35,6 @@ PAPER.mkdir(exist_ok=True)
 ACCOUNT = PAPER / "account.json"
 
 CFG = json.loads((ROOT / "config.json").read_text())
-PROXIES = {"http": CFG["proxy"], "https": CFG["proxy"]}
 
 INIT_CASH = 500.0
 FEE = 0.001          # OKX 现货 taker
@@ -53,8 +53,9 @@ def fmt_ts(ts_ms):
 
 
 def live_price():
-    j = requests.get("https://www.okx.com/api/v5/market/ticker",
-                     params={"instId": "BTC-USDT"}, proxies=PROXIES, timeout=20).json()
+    j = request_get("https://www.okx.com/api/v5/market/ticker",
+                    params={"instId": "BTC-USDT"}, timeout=20,
+                    proxy=CFG["proxy"]).json()
     return float(j["data"][0]["last"])
 
 

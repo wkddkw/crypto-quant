@@ -188,6 +188,20 @@ journalctl -u 'crypto-quant-report@*' -n 100 --no-pager
 
 After each slot completes, the remote bot reads the newest `data/sync/*.md` and `data/daily_reports/*.md` and delivers a concise Chinese summary through its own configured channel, then appends one record to `data/governance/delivery_audit.jsonl` (channel alias, sync_id, outcome, message id, error class). Tokens, webhook URLs, and chat IDs never enter the repository or the audit file. Failed deliveries retry with bounded backoff; a final failure is disclosed in the next report.
 
+### Hosts without systemd (Grok Bot container)
+
+Some hosts have no systemd. The Grok Bot container is one example: PID 1 is `tini`, and `systemctl` is not available. Unit files under `systemd/` still document the calendars, but they cannot fire.
+
+The host scheduler (cron, a container job runner, or the bot's own timer) must still invoke the **same scripts** on the **same calendars**:
+
+- `scripts/hourly_observe.sh` at minute `03` of every Asia/Shanghai hour
+- `scripts/scheduled_report.sh 0600` at `06:00` Asia/Shanghai
+- `scripts/scheduled_report.sh 1800` at `18:00` Asia/Shanghai
+
+The `flock` lock is unchanged (`data/.hourly-observe.lock`, exit `75` on contention). Do not enable Tailscale Funnel. Do not bind Streamlit to `0.0.0.0`; keep `--server.address 127.0.0.1`.
+
+Public-data HTTP clients honor `CRYPTO_QUANT_NO_PROXY=1` (direct only). Otherwise they try the configured proxy and, on connect/proxy failure, retry once without a proxy and fail closed if both paths fail. This does not edit committed proxy strings in `*_config.json`.
+
 ## 6. Private Tailscale Access and Read-only Dashboard
 
 The remote server does not need a public IP. Join it and the local Mac to the same Tailscale tailnet. Do not use Tailscale Funnel; Funnel makes a service publicly reachable and is outside this project's operating boundary.

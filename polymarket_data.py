@@ -5,14 +5,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
-
 from runtime_provenance import provenance
+from http_transport import request_get
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data" / "polymarket"
 CONFIG = json.loads((ROOT / "polymarket_config.json").read_text())
-PROXIES = {"http": CONFIG["proxy"], "https": CONFIG["proxy"]}
 
 
 def now_ms():
@@ -20,8 +18,9 @@ def now_ms():
 
 
 def get(base, path, params=None):
-    response = requests.get(base.rstrip("/") + path, params=params, proxies=PROXIES,
-                            timeout=15, headers={"User-Agent": "crypto-quant-polymarket-paper/0.1"})
+    response = request_get(base.rstrip("/") + path, params=params, timeout=15,
+                           headers={"User-Agent": "crypto-quant-polymarket-paper/0.1"},
+                           proxy=CONFIG["proxy"])
     response.raise_for_status()
     return response.json()
 
