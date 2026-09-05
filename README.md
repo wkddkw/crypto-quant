@@ -35,6 +35,16 @@ $500 模拟账户, v0 打分制策略(见 DESIGN.md §14), 只做 BTC 现货 lon
 有缺口的区间不计数。运行成本另计，观察期满也不会自动开启实盘。
 旧 `data/paper/` 继续作为 `v0_full` 历史对照，策略注册表的晋级规则保持不变。
 
+## 一键离线研究
+
+```bash
+.venv/bin/python research_runner.py
+```
+
+读取已有 BTC/ETH 现货日线，一次比较 4 个固定候选及基线、双倍滑点、信号延迟一天三个情景。
+自动保存数据/代码/参数快照、偏差检查、逐笔成本和连续历史验证报告到 `data/research/<experiment_id>/`。
+不请求行情、不写正式纸面账本、不修改策略和定时任务。完整命令和口径见 [RESEARCH.md](RESEARCH.md)。
+
 ## Funding Carry 模拟账本
 
 独立的 OKX `现货多 + 永续空` funding carry 纸面账本，和上述方向账户完全分开。使用、风险门槛和产物见 [CARRY.md](CARRY.md)。

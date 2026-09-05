@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "assets": ["BTC-USDT", "ETH-USDT"],
+  "validation_start": "2022-01-01",
+  "training_years": 3,
+  "initial_equity": 500.0,
+  "fee": 0.001,
+  "slippage": 0.0003,
+  "rebalance_threshold": 0.10,
+  "min_notional": 1.0,
+  "volatility_cap": {"lookback_days": 30, "annual_target": 0.30},
+  "candidates": ["buy_hold", "trend_only", "ma200", "trend_vol_cap"],
+  "scenarios": {
+    "base": {"slippage_multiplier": 1, "signal_delay_days": 0},
+    "slippage_x2": {"slippage_multiplier": 2, "signal_delay_days": 0},
+    "signal_delay_1d": {"slippage_multiplier": 1, "signal_delay_days": 1}
+  }
+}
