@@ -15,11 +15,17 @@ import research_runner as research
 import trend_paper
 
 
+def _utc_day_ms(start, periods):
+    """Portable UTC midnight ms across pandas 2 (ns) and 3 (us) int resolutions."""
+    idx = pd.date_range(start, periods=periods, freq="D", tz="UTC")
+    return np.array([int(ts.timestamp() * 1000) for ts in idx], dtype="int64")
+
+
 def candles(n=1750):
     rng = np.random.default_rng(71)
     close = 100 * np.exp(np.cumsum(rng.normal(.0006, .025, n)))
     opening = np.r_[close[0], close[:-1]] * np.exp(rng.normal(0, .005, n))
-    return pd.DataFrame({"ts": pd.date_range("2017-01-01", periods=n, tz="UTC").astype("int64") // 1_000_000,
+    return pd.DataFrame({"ts": _utc_day_ms("2017-01-01", n),
                          "inst": "BTC-USDT", "open": opening, "close": close,
                          "high": np.maximum(opening, close) * 1.01,
                          "low": np.minimum(opening, close) * .99})
