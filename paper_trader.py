@@ -267,7 +267,7 @@ def write_report(a, sig, tick, val, action):
         % (sig["ret_1d"] * 100, sig["ret_7d"] * 100, sig["ret_30d"] * 100),
         "",
         "## 验证(预测 vs 24h 实际)",
-        "- 方向预测命中: %s (样本 %d 条, 排除中性; 每条需 24h 后才能结算)"
+        "- 方向预测命中: %s (样本 %d 条, 排除中性; 24h 窗口重叠，非独立交易胜率)"
         % ("%.0f%%" % (acc * 100) if acc is not None else "待积累", val["n_dir"]),
     ]
     for r in last3:

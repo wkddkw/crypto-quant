@@ -12,8 +12,11 @@ mkdir -p "$APP_DIR/data"
 exec /usr/bin/flock -n -E 75 "$LOCK_FILE" /bin/bash -c '
   set -euo pipefail
   "$1" collector.py update
+  trend_exit=0
+  "$1" trend_paper.py run || trend_exit=$?
   "$1" carry_trader.py run
   "$1" paper_trader.py run
   "$1" polymarket_data.py
   "$1" polymarket_paper.py
+  exit "$trend_exit"
 ' _ "$PYTHON"

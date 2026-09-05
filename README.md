@@ -24,6 +24,17 @@ python3 -m venv .venv
 $500 模拟账户, v0 打分制策略(见 DESIGN.md §14), 只做 BTC 现货 long/flat。
 状态/报告/决策日志在 `data/paper/`。远程常驻节点通过 `systemd` 每小时第 03 分钟（北京时间）巡检一次（采集 → 信号 → 调仓 → 报告）；本机不再运行定时任务。远程安装见 [GROK_REMOTE_COMPLETE_GUIDE_CN.md](GROK_REMOTE_COMPLETE_GUIDE_CN.md)。
 
+## BTC 趋势独立模拟验证
+
+`python3 trend_paper.py run` 使用 `trend_only` 固定规则，独立写入
+`data/trend_paper/account.json`，不继承旧方向账户的收益或观察时间。
+小时任务先运行此账本，每根最新已收盘 UTC 日线最多调仓一次，其余时间更新估值。
+日线缺失、过期或价格异常时拒绝推进账本；不补造错过的历史成交。
+同一账本保存同起点、同手续费/滑点的 BTC 买入持有基准，原子保存两个组合。
+日报和治理报告展示净收益、基准收益、观察点回撤及 84 个日度区间的积累进度，
+有缺口的区间不计数。运行成本另计，观察期满也不会自动开启实盘。
+旧 `data/paper/` 继续作为 `v0_full` 历史对照，策略注册表的晋级规则保持不变。
+
 ## Funding Carry 模拟账本
 
 独立的 OKX `现货多 + 永续空` funding carry 纸面账本，和上述方向账户完全分开。使用、风险门槛和产物见 [CARRY.md](CARRY.md)。

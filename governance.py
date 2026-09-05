@@ -5,6 +5,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from paper_metrics import metrics
+
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 REGISTRY = ROOT / "strategy_registry.json"
@@ -46,7 +48,9 @@ def strategy_evidence(strategy):
                 "trades": len(account.get("trades", [])), "equity": account.get("cash"),
                 "upstream_status": status.get("status")}
     if strategy_id == "btc_trend_only_shadow":
-        return {"paper_runner": "not_implemented", "reason": "existing paper account still runs v0_full"}
+        account, error = load_json(DATA / "trend_paper" / "account.json")
+        return {"paper_runner": "daily_shadow", "account_error": error,
+                "performance": metrics(account) if account else None}
     return {"historical_baseline": True}
 
 

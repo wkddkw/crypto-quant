@@ -44,6 +44,53 @@ class DailyReportTests(unittest.TestCase):
         self.assertEqual(summary["equity"], 500.0)
         self.assertEqual(summary["position_value"], 0.0)
 
+    def test_legacy_embedded_records_have_correct_state_and_beijing_day(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            account = {"cash": 400, "btc": 1, "created": "2026-09-01 00:00:00",
+                       "equity_history": [{"ts": "2026-09-01 16:03", "equity": 510}],
+                       "decisions": [{"ts": "2026-09-01 15:03", "action": "hold"},
+                                     {"ts": "2026-09-01 16:03", "action": "BUY"}],
+                       "trades": [{"ts": "2026-09-01 16:03", "usd": 100}]}
+            (root / "account.json").write_text(json.dumps(account))
+            summary = report.strategy_summary("BTC direction", "btc_v0_full", root,
+                                              *report.day_bounds("2026-09-02"))
+        self.assertEqual(summary["status"], "long")
+        self.assertEqual(summary["signals"], 1)
+        self.assertEqual(summary["accepted"], 1)
+        self.assertEqual(summary["rejected"], 0)
+        self.assertEqual(summary["errors"], [])
+        self.assertIsNotNone(summary["updated_at"])
+        self.assertEqual(summary["performance"]["net_pnl"], 10)
+
+    def test_carry_summary_reads_marked_equity_without_optional_file_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "account.json").write_text(json.dumps({
+                "cash": 500, "status": "open", "equity_history": [{"equity": 502}]}))
+            (root / "events.jsonl").write_text("")
+            summary = report.strategy_summary("Carry", "okx_funding_carry", root, 0, 10**15)
+        self.assertEqual(summary["equity"], 502)
+        self.assertEqual(summary["errors"], [])
+
+    def test_shadow_summary_and_sync_include_costed_benchmark(self):
+        import trend_paper
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            account = trend_paper.advance(None, {"candle_ts": 0, "target": .5, "s": .5},
+                                         100, 86_400_000)
+            (root / "account.json").write_text(json.dumps(account))
+            summary = report.strategy_summary("BTC trend shadow", "btc_trend_only_shadow", root, 0, 10**15)
+        payload = {"date_beijing": "2026-09-05", "generated_at": "2026-09-05T06:00:00+08:00",
+                   "git_revision": "test", "strategies": [summary], "governance": {"strategies": []}}
+        rendered = report.render(payload)
+        report.sync_package("2026-09-05T0600+0800", payload, rendered)
+        self.assertEqual(summary["status"], "long")
+        self.assertEqual(summary["errors"], [])
+        self.assertIn("benchmark_return", summary["performance"])
+        self.assertIn("同起点同成本", rendered)
+        self.assertIn("0/84", (report.SYNC / "2026-09-05T0600+0800.md").read_text())
+
     def test_slot_report_is_immutable_and_writes_sync_package(self):
         slot_payload = {"date_beijing": "2026-09-01",
                         "generated_at": "2026-09-01T06:00:00+08:00",
