@@ -1,0 +1,38 @@
+{
+  "BTC-USDT": {
+    "data": {
+      "rows": 3159,
+      "first_candle_ts": 1515628800000,
+      "last_candle_ts": 1788480000000,
+      "excluded_unclosed": 0,
+      "age_since_last_close_hours": 14.504724444444445,
+      "stale_for_live_use": false,
+      "historical_only": true
+    },
+    "bias": {
+      "sampled_points": 24,
+      "prefix_max_error": 0.0,
+      "warmup_max_error": 1.7763568394002505e-15,
+      "passed": true,
+      "limitation": "sampled indicator checks, not proof over every possible execution path"
+    }
+  },
+  "ETH-USDT": {
+    "data": {
+      "rows": 3159,
+      "first_candle_ts": 1515628800000,
+      "last_candle_ts": 1788480000000,
+      "excluded_unclosed": 0,
+      "age_since_last_close_hours": 14.504724444444445,
+      "stale_for_live_use": false,
+      "historical_only": true
+    },
+    "bias": {
+      "sampled_points": 24,
+      "prefix_max_error": 0.0,
+      "warmup_max_error": 9.992007221626409e-16,
+      "passed": true,
+      "limitation": "sampled indicator checks, not proof over every possible execution path"
+    }
+  }
+}

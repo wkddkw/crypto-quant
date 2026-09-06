@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "experiment_id": "20260905T143017Z-5aa3098c",
+  "generated_at": "2026-09-05T14:30:17.008275+00:00",
+  "git_revision": "991385d6086cf001abbeb781393a0f77c061850c",
+  "code_sha256": "242fb04e9dda5710074532627ceeddf102c9723325922eaab418137cfb09252b",
+  "config_sha256": "69614d3a81da448c2c6d0f1b5d53adf814f9edc53013d3ec49a67a5450e64a57",
+  "config": {
+    "schema": 1,
+    "mode": "fixed_start",
+    "assets": [
+      "BTC-USDT",
+      "ETH-USDT"
+    ],
+    "validation_starts": [
+      "2020-01-01",
+      "2021-01-01",
+      "2022-01-01"
+    ],
+    "initial_equity": 500.0,
+    "fee": 0.001,
+    "slippage": 0.0003,
+    "rebalance_threshold": 0.1,
+    "min_notional": 1.0,
+    "volatility_cap": {
+      "lookback_days": 30,
+      "annual_target": 0.3
+    },
+    "candidates": [
+      "buy_hold",
+      "trend_only",
+      "trend_only_scale_50",
+      "trend_vol_cap"
+    ],
+    "scenarios": {
+      "base": {
+        "slippage_multiplier": 1,
+        "signal_delay_days": 0
+      },
+      "slippage_x2": {
+        "slippage_multiplier": 2,
+        "signal_delay_days": 0
+      },
+      "signal_delay_1d": {
+        "slippage_multiplier": 1,
+        "signal_delay_days": 1
+      }
+    }
+  },
+  "mode": "fixed_start",
+  "environment": {
+    "python": "3.13.5",
+    "numpy": "2.5.2",
+    "pandas": "3.0.5",
+    "pyarrow": "25.0.1"
+  },
+  "monthly_running_cost": null,
+  "status": "complete",
+  "historical_only": true,
+  "untouched_holdout": false,
+  "automatic_promotion": false,
+  "label": "历史开发验证",
+  "inputs": {
+    "BTC-USDT": {
+      "filename": "okx_candles_BTC-USDT.parquet",
+      "sha256": "9f0d8929a692d72bdda95d328506969733a5a8c0a7d7a19acc2a77a72083afce",
+      "source": "OKX spot daily candles, local collector snapshot",
+      "snapshot_captured_at": "2026-09-05T14:30:17.008275+00:00",
+      "upstream_acquired_at": null
+    },
+    "ETH-USDT": {
+      "filename": "okx_candles_ETH-USDT.parquet",
+      "sha256": "a17488ee23dc8071db37beeef55e5a7cca5acbdd37ec18c9f320d2fb12896ddb",
+      "source": "OKX spot daily candles, local collector snapshot",
+      "snapshot_captured_at": "2026-09-05T14:30:17.008275+00:00",
+      "upstream_acquired_at": null
+    }
+  },
+  "elapsed_seconds": 1.9706565369851887
+}
