@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -52,20 +53,59 @@ class FixedStartResearchTests(unittest.TestCase):
             start = pd.Timestamp(window["requested_start"], tz="UTC")
             self.assertEqual(int(self.frame["ts"].iloc[window["start_index"]]),
                              int(start.timestamp() * 1000))
-            self.assertEqual(window["actual_first_execution_time"], start.isoformat())
+            self.assertEqual(window["account_start_time"], start.isoformat())
             warmup = pd.Timestamp(window["warmup_cutoff"])
             self.assertEqual(warmup, start - pd.Timedelta(days=1))
             self.assertGreaterEqual(window["start_index"], research.WARMUP)
             self.assertEqual(window["end_index"], len(self.frame))
 
-        results, _, _ = research.compare_asset_fixed_start(
+        results, _, trades = research.compare_asset_fixed_start(
             self.frame, self.config, windows, None
         )
         for start_str in self.config["validation_starts"]:
             payload = results[start_str]["base"]["trend_only"]
             self.assertEqual(payload["requested_start"], start_str)
-            self.assertEqual(payload["actual_first_execution_time"],
+            self.assertEqual(payload["account_start_time"],
                              pd.Timestamp(start_str, tz="UTC").isoformat())
+            executions = [t for t in trades if t["requested_start"] == start_str
+                          and t["scenario"] == "base" and t["candidate"] == "trend_only"]
+            expected = pd.Timestamp(executions[0]["ts"], unit="ms", tz="UTC").isoformat() if executions else None
+            self.assertEqual(payload["actual_first_execution_time"], expected)
+
+    def test_first_execution_comes_from_each_scenario_and_absent_trades_are_null(self):
+        config = copy.deepcopy(self.config)
+        config["validation_starts"] = ["2020-01-01"]
+        windows = research.fixed_start_windows(self.frame, config)
+        start = windows[0]["start_index"]
+        signals = pd.DataFrame(0.0, index=self.frame.index, columns=config["candidates"])
+        signals["buy_hold"] = 1.0
+        signals.loc[start + 3:, "trend_only"] = 1.0
+        with patch.object(research, "targets", return_value=signals):
+            results, _, _ = research.compare_asset_fixed_start(self.frame, config, windows, None)
+        for name, scenario in config["scenarios"].items():
+            payloads = results["2020-01-01"][name]
+            expected = pd.Timestamp(self.frame.ts.iloc[start + 4 + scenario["signal_delay_days"]], unit="ms", tz="UTC").isoformat()
+            self.assertEqual(payloads["trend_only"]["actual_first_execution_time"], expected)
+            self.assertEqual(payloads["buy_hold"]["actual_first_execution_time"], windows[0]["account_start_time"])
+            for candidate in ("trend_only_scale_50", "trend_vol_cap"):
+                self.assertIsNone(payloads[candidate]["actual_first_execution_time"])
+                self.assertEqual(payloads[candidate]["metrics"]["trades"], 0)
+
+    def test_delay_requires_extra_warmup_and_does_not_postpone_baseline(self):
+        config = copy.deepcopy(self.config)
+        config["validation_starts"] = ["2020-01-01"]
+        start = int(pd.to_datetime(self.frame.ts, unit="ms", utc=True).searchsorted(pd.Timestamp("2020-01-01", tz="UTC")))
+        frame201 = self.frame.iloc[start - research.WARMUP:start + 10].reset_index(drop=True)
+        with self.assertRaisesRegex(ValueError, "have=201:need=202"):
+            research.fixed_start_windows(frame201, config)
+        base = copy.deepcopy(config)
+        base["scenarios"] = {"base": base["scenarios"]["base"]}
+        self.assertEqual(research.fixed_start_windows(frame201, base)[0]["start_index"], 201)
+        frame202 = self.frame.iloc[start - research.WARMUP - 1:start + 10].reset_index(drop=True)
+        windows = research.fixed_start_windows(frame202, config)
+        results, _, _ = research.compare_asset_fixed_start(frame202, config, windows, None)
+        for payloads in results["2020-01-01"].values():
+            self.assertEqual(payloads["buy_hold"]["actual_first_execution_time"], "2020-01-01T00:00:00+00:00")
 
     def test_unavailable_start_hard_fails(self):
         bad = copy.deepcopy(self.config)

@@ -242,6 +242,7 @@ def fixed_start_windows(frame, config):
     """Exact calendar starts to a shared cutoff; never silently shift a requested start."""
     dates = pd.to_datetime(frame["ts"], unit="ms", utc=True)
     end_i = len(frame)
+    required_warmup = WARMUP + max(s["signal_delay_days"] for s in config["scenarios"].values())
     rows = []
     for start_str in config["validation_starts"]:
         start = pd.Timestamp(start_str, tz="UTC")
@@ -255,11 +256,11 @@ def fixed_start_windows(frame, config):
                 f"requested_start_unavailable:{start_str}:nearest_bar="
                 f"{pd.Timestamp(actual_ms, unit='ms', tz='UTC').date().isoformat()}"
             )
-        # Need WARMUP bars strictly before the first trade day for indicator warmup.
-        if start_i < WARMUP:
+        # Every scenario must have a fully warmed signal at the account start.
+        if start_i < required_warmup:
             raise ValueError(
                 f"insufficient_warmup_before_start:{start_str}:"
-                f"have={start_i}:need={WARMUP}"
+                f"have={start_i}:need={required_warmup}"
             )
         warmup_cutoff_ts = int(frame["ts"].iloc[start_i - 1])
         rows.append({
@@ -267,7 +268,7 @@ def fixed_start_windows(frame, config):
             "requested_start_ts": requested_ms,
             "start_index": start_i,
             "end_index": end_i,
-            "actual_first_execution_time": pd.Timestamp(actual_ms, unit="ms", tz="UTC").isoformat(),
+            "account_start_time": pd.Timestamp(actual_ms, unit="ms", tz="UTC").isoformat(),
             "warmup_cutoff": pd.Timestamp(warmup_cutoff_ts, unit="ms", tz="UTC").isoformat(),
             "warmup_cutoff_ts": warmup_cutoff_ts,
         })
@@ -322,7 +323,10 @@ def compare_asset_fixed_start(frame, config, windows, monthly_cost):
                 summary = statistics(marks, trades, config["initial_equity"], monthly_cost)
                 payload = {
                     "requested_start": window["requested_start"],
-                    "actual_first_execution_time": window["actual_first_execution_time"],
+                    "account_start_time": window["account_start_time"],
+                    "actual_first_execution_time": (
+                        pd.Timestamp(trades[0]["ts"], unit="ms", tz="UTC").isoformat() if trades else None
+                    ),
                     "warmup_cutoff": window["warmup_cutoff"],
                     "metrics": summary,
                 }
@@ -422,6 +426,7 @@ def render_fixed_start_report(manifest, results, checks):
         "半仓仍使用 10pp 调仓阈值 → 相对调仓频率会变化；费用下降可能同时来自更小仓位与更低换手。",
         "若 vol_cap 与 half-scale 的 avg_position 相差很大，只描述收益/风险权衡，**不得**声称动态波动控制已证明，也不得回测重调半仓或波动目标。",
         "avg_position = 标记日实际持仓市值/当日收盘权益均值；avg_target = 目标权重均值（二者分开报告）。",
+        "账户起点固定；真实首笔执行时间按各候选/情景的成交记录读取，无成交时为 null（表内显示 -）。",
         "",
         f"每个独立账户初始 ${config['initial_equity']:.2f}；手续费 {config['fee']:.3%}；"
         f"滑点 {config['slippage']:.3%}；调仓阈值 {config['rebalance_threshold']:.0%}；"
@@ -441,8 +446,8 @@ def render_fixed_start_report(manifest, results, checks):
             f"不适合实时使用：{health['stale_for_live_use']}。",
             f"共享冻结 cutoff = 上述最后已收盘日线；所有起点共用同一快照。",
             "",
-            "| 起点 | 情景 | 候选 | 净收益 | 超额 | CAGR | 最大回撤 | Sharpe | 成交 | 手续费 | 换手名义 | 滑点成本 | avg_pos | avg_tgt | 首笔执行 | warmup截止 |",
-            "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
+            "| 起点 | 情景 | 候选 | 净收益 | 超额 | CAGR | 最大回撤 | Sharpe | 成交 | 手续费 | 换手名义 | 滑点成本 | avg_pos | avg_tgt | 账户开始 | 首笔执行 | warmup截止 |",
+            "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|",
         ])
         for start_key in config["validation_starts"]:
             for scenario, cand_map in starts[start_key].items():
@@ -457,7 +462,7 @@ def render_fixed_start_report(manifest, results, checks):
                         f"{row['excess_return']:+.2%} | {cagr} | {row['max_drawdown']:.2%} | {sharpe} | "
                         f"{row['trades']} | ${row['fees']:.2f} | ${row['turnover_notional']:.2f} | "
                         f"${row['slippage_cost']:.2f} | {row['avg_position']:.3f} | {row['avg_target']:.3f} | "
-                        f"{payload['actual_first_execution_time']} | {payload['warmup_cutoff']} |"
+                        f"{payload['account_start_time']} | {payload['actual_first_execution_time'] or '-'} | {payload['warmup_cutoff']} |"
                     )
     lines.extend([
         "", f"合计报告组数：{group_count}（期望 3 starts × 2 assets × 3 scenarios × 4 candidates = 72）。",

@@ -22,7 +22,7 @@
 - 配置：`research_config_fixed_start.json`，`mode: fixed_start`。
 - **无训练窗 / 无参数选择**；不要求 `training_years==3`。
 - `validation_starts`: `["2020-01-01","2021-01-01","2022-01-01"]`（UTC 元旦）。
-- 每个起点只需起点前有足够指标预热（`WARMUP=201` 根日线）；若无法兑现（预热不足、或该日无交易 K 线），**硬失败**，绝不静默后移起点。
+- 每个起点前至少有 `WARMUP + max(signal_delay_days)` 根日线；`WARMUP=201`，本设计含延迟一天情景，因此至少需要 202 根。若无法兑现（预热不足、或该日无交易 K 线），**硬失败**，绝不静默后移起点。
 - 每个起点 = 独立账户，从该日起模拟到**共享**冻结 cutoff（同一快照的最后已收盘 bar）。
 - 情景：`base` / `slippage_x2` / `signal_delay_1d`。
 - 成本：fee=0.001，slippage=0.0003，rebalance_threshold=0.1，min_notional=1.0。
@@ -38,7 +38,7 @@
 - `avg_position`：标记日 **实际持仓市值 / 当日收盘权益** 的均值（来自模拟持仓，非 target）。
 - `avg_target`：目标权重均值；**不得**取代 `avg_position`。
 
-汇总表含：`requested_start`, `actual_first_execution_time`, `warmup_cutoff`（首个交易日前一根 / 预热最后一根）。
+汇总表含：`requested_start`、`account_start_time`（固定账户起点）、`actual_first_execution_time`（各候选/情景首笔真实模拟成交时间，无成交则为 `null`）、`warmup_cutoff`（账户起点前一根 / 预热最后一根）。首笔成交可以晚于账户起点，不能用账户起点代替。
 
 ## 解读护栏
 
