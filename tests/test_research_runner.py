@@ -19,7 +19,11 @@ def candles(n=1750):
     rng = np.random.default_rng(71)
     close = 100 * np.exp(np.cumsum(rng.normal(.0006, .025, n)))
     opening = np.r_[close[0], close[:-1]] * np.exp(rng.normal(0, .005, n))
-    return pd.DataFrame({"ts": pd.date_range("2017-01-01", periods=n, tz="UTC").astype("int64") // 1_000_000,
+    # Epoch-milliseconds, computed explicitly rather than via .astype("int64") //
+    # 1_000_000: that expression's unit depends on the datetime64 resolution, which
+    # pandas 3.0 changed from nanoseconds to microseconds (silently 1000x off).
+    ts = pd.date_range("2017-01-01", periods=n, tz="UTC").map(lambda v: int(v.timestamp() * 1000))
+    return pd.DataFrame({"ts": ts,
                          "inst": "BTC-USDT", "open": opening, "close": close,
                          "high": np.maximum(opening, close) * 1.01,
                          "low": np.minimum(opening, close) * .99})

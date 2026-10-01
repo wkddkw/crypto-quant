@@ -20,7 +20,11 @@ class CarryLedgerTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         base = Path(self.tmp.name)
         self.paths = {name: getattr(carry, name) for name in
-                      ("CARRY", "ACCOUNT", "EVENTS", "SNAPSHOTS", "FUNDING_LEDGER", "REPORT", "LOCK")}
+                      ("DATA", "CARRY", "ACCOUNT", "EVENTS", "SNAPSHOTS", "FUNDING_LEDGER", "REPORT", "LOCK")}
+        # DATA must be isolated too: funding_events() resolves its parquet under
+        # module-level DATA, not under CARRY. Without this the test reads the real
+        # gitignored data/ directory and fails on a clean checkout.
+        carry.DATA = base
         carry.CARRY = base
         carry.ACCOUNT = base / "account.json"
         carry.EVENTS = base / "events.jsonl"
@@ -108,8 +112,11 @@ class CarryLedgerTests(unittest.TestCase):
                                + 0.005 * (80000 - executable_swap))
 
     def test_funding_is_idempotent_and_cursor_only_advances_processed_rows(self):
-        funding_file = ROOT / "data" / ("okx_funding_" + carry.CONFIG["swap_inst"] + ".parquet")
-        original = pd.read_parquet(funding_file)
+        # funding_events() early-returns unless the parquet path exists, and its contents
+        # come from the patched read_parquet below. Create an empty placeholder in the
+        # isolated DATA dir so the test never touches the real gitignored data/ files.
+        funding_file = carry.DATA / ("okx_funding_" + carry.CONFIG["swap_inst"] + ".parquet")
+        funding_file.touch()
         fixture = pd.DataFrame([
             {"ts": 100, "inst": carry.CONFIG["swap_inst"], "funding_rate": 0.0001, "src": "okx"},
             {"ts": 200, "inst": carry.CONFIG["swap_inst"], "funding_rate": -0.0001, "src": "okx"},
@@ -127,7 +134,14 @@ class CarryLedgerTests(unittest.TestCase):
         self.assertAlmostEqual(again, 0.0)
         self.assertAlmostEqual(cash, 0.0)
         self.assertTrue(carry.FUNDING_LEDGER.exists())
-        self.assertEqual(len(original.columns), 4)
+        # The ledger holds exactly the two settled events, written with the full schema.
+        # (This replaces an assertion that only inspected the real parquet's column count.)
+        lines = carry.FUNDING_LEDGER.read_text().splitlines()
+        self.assertEqual(len(lines), 3)  # header + 2 events
+        self.assertEqual(lines[0].split(","),
+                         ["event_id", "ts", "rate", "notional", "cashflow", "src", "complete"])
+        self.assertIn("funding:BTC-USDT-SWAP:100", lines[1])
+        self.assertIn("funding:BTC-USDT-SWAP:200", lines[2])
 
 
 if __name__ == "__main__":

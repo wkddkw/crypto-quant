@@ -7,7 +7,8 @@
 ## 快速开始
 
 ```bash
-cd /Users/dkw/.zcode/workspace/default/crypto-quant
+git clone https://github.com/wkddkw/crypto-quant.git
+cd crypto-quant
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 

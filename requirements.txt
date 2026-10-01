@@ -1,5 +1,10 @@
-requests>=2.31
-pandas>=2.0
-pyarrow>=14
-numpy>=1.24
+# Upper bounds are deliberate. The paper ledgers run unattended on the live node;
+# an unvetted major release must not arrive silently through `pip install -r`.
+# pandas 3.0 changed the default datetime64 resolution from ns to us, which silently
+# shifted `.astype("int64")`-derived timestamps by 1000x (see collector.py). That class
+# of breakage is caught by .github/workflows/tests.yml, not by this file alone.
+requests>=2.31,<3
+pandas>=2.0,<4
+pyarrow>=14,<26
+numpy>=1.24,<3
 streamlit>=1.38,<2
