@@ -1,0 +1,14 @@
+[Unit]
+Description=Crypto quant read-only dashboard
+
+[Service]
+Type=simple
+WorkingDirectory=%h/crypto-quant
+ExecStart=%h/crypto-quant/.venv/bin/streamlit run dashboard.py --server.address 127.0.0.1 --server.port 8888 --server.headless true --browser.gatherUsageStats false
+Restart=on-failure
+RestartSec=10s
+StandardOutput=append:%h/crypto-quant/logs/dashboard.log
+StandardError=append:%h/crypto-quant/logs/dashboard.log
+
+[Install]
+WantedBy=default.target

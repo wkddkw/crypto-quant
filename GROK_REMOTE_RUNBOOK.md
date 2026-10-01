@@ -8,6 +8,65 @@ The repository is public:
 https://github.com/wkddkw/crypto-quant.git
 ```
 
+## 0. Current Deployment (verified 2026-10-01)
+
+Sections 2–7 describe the original dedicated-VPS layout (`/opt/crypto-quant`, `quant`
+account, system-level systemd). That node (`crypto-quant-grok`) has been offline since
+roughly 2026-09-12 and is **not** the running node. Treat those sections as the
+portable/unprivileged-host reference, not as the live deployment.
+
+The node actually running is the owner's always-on laptop, reached over Tailscale:
+
+| Item | Value |
+|---|---|
+| Tailscale hostname | `padt14` |
+| OS | Omarchy (Arch Linux), x86_64 laptop |
+| Account | `dkw` (no dedicated service user) |
+| App path | `~/crypto-quant` |
+| systemd scope | **user** (`systemctl --user`), units in `~/.config/systemd/user/` |
+| Linger | `yes` (timers keep running while logged out) |
+| Dashboard | `127.0.0.1:8888`, `crypto-quant-dashboard.service`, `Restart=on-failure` |
+
+Running timers (all `enabled`):
+
+```text
+crypto-quant-hourly-observe.timer   *-*-* *:03:00 Asia/Shanghai   → boot_catchup.sh --scheduled
+crypto-quant-report-0600.timer      *-*-* 06:00:00 Asia/Shanghai → scheduled_report.sh 0600
+crypto-quant-report-1800.timer      *-*-* 18:00:00 Asia/Shanghai → scheduled_report.sh 1800
+crypto-quant-catchup.timer          OnBootSec=3min                → boot_catchup.sh --boot
+```
+
+Because this is a laptop, it suspends. Suspended time is not observed time: after a
+resume or reboot the first hourly invocation reconciles the gap, appends
+`missed_hourly_observation` records to `data/governance/gap_log.jsonl`, and never
+replays historical paper trades. Missed report slots are recorded in
+`data/governance/delivery_audit.jsonl` as `outcome=missed`; they are never backfilled.
+
+`scripts/boot_catchup.sh` is the entrypoint the hourly timer actually runs. It owns the
+slot-reconciliation state machine (`data/governance/observation_state.json`) and calls
+`scripts/hourly_observe.sh` for the actual data/ledger cycle. It is tracked in the
+repository; keep the tracked copy and the node copy byte-identical.
+
+Installed units must be semantically equal to the tracked templates. Verify from a clone
+on the node (comments are stripped, since the repository version carries explanatory ones):
+
+```bash
+cd ~/crypto-quant
+for u in hourly-observe.service catchup.service catchup.timer dashboard.service \
+         'report@.service' hourly-observe.timer report-0600.timer report-1800.timer; do
+  if diff -q <(grep -vE '^\s*#|^\s*$' "systemd/crypto-quant-$u") \
+             <(grep -vE '^\s*#|^\s*$' "$HOME/.config/systemd/user/crypto-quant-$u") >/dev/null; then
+    echo "ok:   $u"
+  else
+    echo "DIFF: $u  ->  install the tracked template, then systemctl --user daemon-reload"
+  fi
+done
+```
+
+A `DIFF` is not automatically a bug: it means the node has not yet picked up the current
+tracked template. Review the difference before installing. The `Persistent=false` on both
+report timers is load-bearing — see the note in each timer file.
+
 ## 1. Operating Boundary
 
 The remote node is a research and paper-trading node only.
@@ -93,7 +152,8 @@ In `gmgn_config.json`, fill the official API contract fields and set `mode` to `
 
 ## 5. Commands and Scheduling
 
-All commands run from `/opt/crypto-quant/app`. They write only local paper data.
+Commands run from the app directory (`~/crypto-quant` on the live node, `/opt/crypto-quant/app`
+on the reference VPS layout). They write only local paper data.
 
 ### Hourly public-data and paper-observation cycle
 
@@ -101,6 +161,7 @@ The remote node replaces the deleted local ZCode hourly task at minute `03` of e
 
 ```text
 collector.py update
+trend_paper.py run
 carry_trader.py run
 paper_trader.py run
 polymarket_data.py
@@ -109,35 +170,56 @@ polymarket_paper.py
 
 `polymarket_complete_set` remains governance-paused: its two commands collect repaired-filter observations only and do not claim strategy performance. `gmgn_copy_paper.py run` is intentionally excluded. It remains fixture-only until its official, authorized read-only API contract is configured.
 
+Two scripts are involved, with distinct jobs:
+
+| Script | Role |
+|---|---|
+| `scripts/hourly_observe.sh` | The data/ledger cycle above, under `flock`. Idempotent per invocation but has no notion of missed slots. |
+| `scripts/boot_catchup.sh` | The scheduled entrypoint. Guards against double-runs per slot, reconciles gaps after suspend/reboot, updates `data/governance/observation_state.json`, and flags missed report slots. Calls `hourly_observe.sh`. |
+
+The timer must invoke `boot_catchup.sh`, **not** `hourly_observe.sh` directly. Running
+`hourly_observe.sh` on a bare timer would re-run data collection for every missed slot at
+once and lose the gap record.
+
 The repository contains installable templates:
 
 ```text
 scripts/hourly_observe.sh
+scripts/boot_catchup.sh
 systemd/crypto-quant-hourly-observe.service
 systemd/crypto-quant-hourly-observe.timer
+systemd/crypto-quant-catchup.service
+systemd/crypto-quant-catchup.timer
 ```
 
-Install and enable them on the remote server:
+Install and enable them on the remote server. On the live node these are **user** units
+(`~/.config/systemd/user/`, `systemctl --user`) because the node runs as the login user
+`dkw`; use the `/etc/systemd/system` + `User=quant` variant shown in section 3 only on a
+VPS-style host with a dedicated account.
 
 ```bash
-cd /opt/crypto-quant/app
+cd ~/crypto-quant
 git pull --ff-only
-chmod +x scripts/hourly_observe.sh
-sudo install -m 644 systemd/crypto-quant-hourly-observe.service \
-  /etc/systemd/system/crypto-quant-hourly-observe.service
-sudo install -m 644 systemd/crypto-quant-hourly-observe.timer \
-  /etc/systemd/system/crypto-quant-hourly-observe.timer
-sudo systemctl daemon-reload
-sudo systemctl enable --now crypto-quant-hourly-observe.timer
-systemctl list-timers crypto-quant-hourly-observe.timer
+chmod +x scripts/hourly_observe.sh scripts/boot_catchup.sh
+install -m 644 systemd/crypto-quant-hourly-observe.service ~/.config/systemd/user/
+install -m 644 systemd/crypto-quant-hourly-observe.timer   ~/.config/systemd/user/
+install -m 644 systemd/crypto-quant-catchup.service        ~/.config/systemd/user/
+install -m 644 systemd/crypto-quant-catchup.timer          ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now crypto-quant-hourly-observe.timer crypto-quant-catchup.timer
+systemctl --user list-timers 'crypto-quant-*'
+loginctl enable-linger "$USER"   # required: timers must survive logout
 ```
 
 Before enabling the timer, execute and inspect one manual run:
 
 ```bash
-sudo -u quant /opt/crypto-quant/app/scripts/hourly_observe.sh
-journalctl -u crypto-quant-hourly-observe.service -n 100 --no-pager
+scripts/hourly_observe.sh
+journalctl --user -u crypto-quant-hourly-observe.service -n 100 --no-pager
 ```
+
+`boot_catchup.sh` appends its own stdout/stderr to `logs/hourly-observe.log`; when a slot
+is skipped because it already succeeded, that log is where the skip message appears.
 
 The lock intentionally causes an overlapping invocation to exit with code `75`, which systemd records as a successful skipped run rather than letting two ledger writers run concurrently.
 
@@ -162,28 +244,32 @@ data/sync/YYYY-MM-DDTHHMM+0800.md/.json           # half-day sync package
 data/governance/delivery_audit.jsonl              # append-only delivery audit
 ```
 
-Install and enable:
+Install and enable (user-unit form, as on the live node):
 
 ```bash
-cd /opt/crypto-quant/app
+cd ~/crypto-quant
 git pull --ff-only
 chmod +x scripts/scheduled_report.sh
-sudo install -m 644 systemd/crypto-quant-report@.service \
-  /etc/systemd/system/crypto-quant-report@.service
-sudo install -m 644 systemd/crypto-quant-report-0600.timer \
-  /etc/systemd/system/crypto-quant-report-0600.timer
-sudo install -m 644 systemd/crypto-quant-report-1800.timer \
-  /etc/systemd/system/crypto-quant-report-1800.timer
-sudo systemctl daemon-reload
-sudo systemctl enable --now crypto-quant-report-0600.timer crypto-quant-report-1800.timer
-systemctl list-timers 'crypto-quant-report-*'
+install -m 644 systemd/crypto-quant-report@.service    ~/.config/systemd/user/
+install -m 644 systemd/crypto-quant-report-0600.timer  ~/.config/systemd/user/
+install -m 644 systemd/crypto-quant-report-1800.timer  ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now crypto-quant-report-0600.timer crypto-quant-report-1800.timer
+systemctl --user list-timers 'crypto-quant-report-*'
 ```
 
-Verify one slot manually:
+Both report timers ship with `Persistent=false` on purpose. `Persistent=true` would make
+systemd re-fire a missed 06:00 slot on resume, and `daily_report.py --slot 0600` would then
+write a snapshot at, say, 11:40 carrying a 06:00 label — manufacturing a time point that
+never happened. The gap is instead recorded as `outcome=missed` in
+`data/governance/delivery_audit.jsonl` by `boot_catchup.sh`. Do not "fix" this by enabling
+persistence.
+
+Verify one slot manually (during a real slot window, not retroactively):
 
 ```bash
-sudo -u quant /opt/crypto-quant/app/scripts/scheduled_report.sh 0600
-journalctl -u 'crypto-quant-report@*' -n 100 --no-pager
+scripts/scheduled_report.sh 0600
+journalctl --user -u 'crypto-quant-report@*' -n 100 --no-pager
 ```
 
 After each slot completes, the remote bot reads the newest `data/sync/*.md` and `data/daily_reports/*.md` and delivers a concise Chinese summary through its own configured channel, then appends one record to `data/governance/delivery_audit.jsonl` (channel alias, sync_id, outcome, message id, error class). Tokens, webhook URLs, and chat IDs never enter the repository or the audit file. Failed deliveries retry with bounded backoff; a final failure is disclosed in the next report.
@@ -194,9 +280,15 @@ Some hosts have no systemd. The Grok Bot container is one example: PID 1 is `tin
 
 The host scheduler (cron, a container job runner, or the bot's own timer) must still invoke the **same scripts** on the **same calendars**:
 
-- `scripts/hourly_observe.sh` at minute `03` of every Asia/Shanghai hour
+- `scripts/boot_catchup.sh --scheduled` at minute `03` of every Asia/Shanghai hour
+- `scripts/boot_catchup.sh --boot` once, three minutes after host start
 - `scripts/scheduled_report.sh 0600` at `06:00` Asia/Shanghai
 - `scripts/scheduled_report.sh 1800` at `18:00` Asia/Shanghai
+
+Schedule `boot_catchup.sh`, not `hourly_observe.sh`: the former adds the per-slot
+double-run guard and gap reconciliation the bare cycle script lacks. On a host with no
+systemd, `--scheduled` still reads `data/governance/observation_state.json`, so the guard
+works under cron too.
 
 The `flock` lock is unchanged (`data/.hourly-observe.lock`, exit `75` on contention). Do not enable Tailscale Funnel. Do not bind Streamlit to `0.0.0.0`; keep `--server.address 127.0.0.1`.
 
@@ -219,9 +311,12 @@ On the remote Linux server:
 
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up --hostname=crypto-quant-grok --ssh
+sudo tailscale up --hostname=padt14 --ssh
 sudo tailscale status
 ```
+
+The live node is already joined as `padt14`. `crypto-quant-grok` was the earlier VPS node
+and is offline; do not reuse that hostname.
 
 The `tailscale up` command prints an authentication URL when interactive login is required. Authenticate it with the same Tailscale account/tailnet used by the local Mac. Use a reusable tagged auth key only when you control the tailnet policy and server lifecycle; never put that key in this repository or a Grok prompt.
 
@@ -229,7 +324,7 @@ On the local Mac, install and sign in to the Tailscale client using the same tai
 
 ```bash
 tailscale status
-ping crypto-quant-grok
+ping padt14
 ```
 
 Use the MagicDNS name printed by `tailscale status`, or the remote node's `100.x.y.z` Tailscale address if MagicDNS is disabled.
@@ -239,7 +334,7 @@ Use the MagicDNS name printed by `tailscale status`, or the remote node's `100.x
 Keep Streamlit bound to the loopback interface on the remote node:
 
 ```bash
-cd /opt/crypto-quant/app
+cd ~/crypto-quant
 .venv/bin/streamlit run dashboard.py \
   --server.address 127.0.0.1 \
   --server.port 8888 \
@@ -260,7 +355,7 @@ Open the HTTPS URL shown by `tailscale serve status` from the local Mac. It is r
 sudo tailscale serve --https=443 off
 ```
 
-Set Tailscale ACLs so only the owner's local device or an owner group can reach `crypto-quant-grok:443`, and only approved admin devices can SSH to the remote node. Do not grant the Grok Bot ability to modify tailnet ACLs, add devices, or enable Funnel.
+Set Tailscale ACLs so only the owner's local device or an owner group can reach `padt14:443`, and only approved admin devices can SSH to the remote node. Do not grant the Grok Bot ability to modify tailnet ACLs, add devices, or enable Funnel.
 
 ### Read remote reports and data from the local Mac
 
@@ -268,71 +363,72 @@ The dashboard reads data on the remote server. For a local copy of selected repo
 
 ```bash
 # Pull reports only; safe for routine local inspection.
-rsync -avz quant@crypto-quant-grok:/opt/crypto-quant/app/data/daily_reports/ \
+rsync -avz dkw@padt14:~/crypto-quant/data/daily_reports/ \
   /Users/dkw/Documents/crypto-quant-remote/daily_reports/
 
 # Pull governance and research memos.
-rsync -avz quant@crypto-quant-grok:/opt/crypto-quant/app/data/governance/ \
+rsync -avz dkw@padt14:~/crypto-quant/data/governance/ \
   /Users/dkw/Documents/crypto-quant-remote/governance/
-rsync -avz quant@crypto-quant-grok:/opt/crypto-quant/app/data/research/ \
+rsync -avz dkw@padt14:~/crypto-quant/data/research/ \
   /Users/dkw/Documents/crypto-quant-remote/research/
 ```
+
+The node's `data/` (ledgers, events, decision history) is gitignored and exists only on
+that laptop's disk. There is currently no scheduled backup of it — periodic pulls like the
+above are the only copy outside the node. See section 7.
 
 Use one-way remote-to-local pulls for inspection. Do not rsync local `data/` back to the active remote node because that could overwrite its paper ledger. When a full backup is required, first stop the remote cycle or copy to a timestamped local directory without `--delete`.
 
 ### Keep the dashboard running with systemd
 
-Create `/etc/systemd/system/crypto-quant-dashboard.service`:
-
-```ini
-[Unit]
-Description=Crypto quant read-only dashboard
-After=network-online.target tailscaled.service
-Wants=network-online.target
-
-[Service]
-User=quant
-WorkingDirectory=/opt/crypto-quant/app
-ExecStart=/opt/crypto-quant/app/.venv/bin/streamlit run dashboard.py --server.address 127.0.0.1 --server.port 8888 --server.headless true --browser.gatherUsageStats false
-Restart=on-failure
-RestartSec=5
-StandardOutput=append:/opt/crypto-quant/logs/dashboard.log
-StandardError=append:/opt/crypto-quant/logs/dashboard.log
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and check it:
+The tracked template is `systemd/crypto-quant-dashboard.service`. On a user-scope node it
+is installed unchanged; on a VPS-style host add `User=quant` and `WantedBy=multi-user.target`
+and place it under `/etc/systemd/system`.
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now crypto-quant-dashboard.service
-sudo systemctl status crypto-quant-dashboard.service
+cd ~/crypto-quant
+install -m 644 systemd/crypto-quant-dashboard.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now crypto-quant-dashboard.service
+systemctl --user status crypto-quant-dashboard.service
 ```
+
+The dashboard binds `127.0.0.1` only. Reach it over Tailscale; do not rebind to `0.0.0.0`
+and do not enable Funnel.
 
 ## 7. Git Update Procedure
 
 The remote server is the operating copy. Before each daily cycle or during a controlled maintenance window:
 
 ```bash
-cd /opt/crypto-quant/app
+cd ~/crypto-quant        # /opt/crypto-quant/app on the VPS layout
 git fetch origin
 git status --short
 git pull --ff-only origin main
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m unittest discover -s tests -v
+
+# Re-install units if any systemd/ template changed, then re-verify:
+install -m 644 systemd/crypto-quant-*.service systemd/crypto-quant-*.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
 ```
 
 Never use `git reset --hard` on a node that has unsynced paper data. The `data/` directory is ignored and must be backed up independently.
 
-Recommended local data backup:
+On the node, back up to a timestamped directory outside the clone:
 
 ```bash
-rsync -a --delete /opt/crypto-quant/app/data/ /opt/crypto-quant/backups/data-current/
+rsync -a ~/crypto-quant/data/ ~/crypto-quant-backups/data-$(date -u +%Y%m%dT%H%M%SZ)/
 ```
 
-Keep at least daily rotating backups. The public Git repository is not a backup of paper data because `data/` is intentionally ignored.
+Keep at least daily rotating backups. The public Git repository is not a backup of paper
+data because `data/` is intentionally ignored.
+
+**Open item (2026-10-01):** the live node currently has no scheduled backup and no backup
+directory, and the ledgers exist only on that laptop's disk. Until a rotating backup or a
+scheduled pull to the local Mac is in place, a disk failure loses the entire paper
+observation history. Prefer a one-way, node-to-Mac pull on a timer over pushing local
+`data/` back to the node.
 
 ## 8. Grok Bot Commit Authorization
 
@@ -419,15 +515,21 @@ At 06:00 and 18:00 Asia/Shanghai every day, deliver the paper-strategy summary t
 Run these after deployment and after every code update:
 
 ```bash
-cd /opt/crypto-quant/app
+cd ~/crypto-quant
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python governance.py review
 .venv/bin/python daily_report.py
 .venv/bin/python gmgn_copy_paper.py status
 curl -I http://127.0.0.1:8888
-systemctl status crypto-quant-dashboard.service
-systemctl status crypto-quant-hourly-observe.timer
+systemctl --user list-timers 'crypto-quant-*' --no-pager
+systemctl --user status crypto-quant-dashboard.service --no-pager
+cat data/governance/observation_state.json        # fresh success_at == hourly cycle is alive
+tail -5 data/governance/gap_log.jsonl 2>/dev/null # suspend/reboot gaps, if any
+tail -5 data/governance/delivery_audit.jsonl 2>/dev/null  # missed report slots
 ```
+
+A `success_at` older than the last `:03` slot means the hourly cycle is not running; check
+`systemctl --user list-timers` and `logs/hourly-observe.log` before anything else.
 
 Expected safe behavior:
 
