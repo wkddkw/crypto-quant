@@ -1,11 +1,11 @@
 [Unit]
-Description=Crypto quant hourly public-data and paper-observation cycle
+Description=Crypto quant one-time boot catchup if hourly observation has not succeeded
 
 [Service]
 Type=oneshot
 WorkingDirectory=%h/crypto-quant
 Environment=CRYPTO_QUANT_APP_DIR=%h/crypto-quant
-ExecStart=%h/crypto-quant/scripts/boot_catchup.sh --scheduled
+ExecStart=%h/crypto-quant/scripts/boot_catchup.sh --boot
 SuccessExitStatus=75
 StandardOutput=append:%h/crypto-quant/logs/hourly-observe.log
 StandardError=append:%h/crypto-quant/logs/hourly-observe.log

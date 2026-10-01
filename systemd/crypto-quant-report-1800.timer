@@ -2,8 +2,11 @@
 Description=Crypto quant 18:00 Beijing report slot
 
 [Timer]
+# Persistent=false is deliberate: report slots must never be backfilled.
+# A missed slot is recorded in data/governance/delivery_audit.jsonl as
+# outcome=missed by scripts/boot_catchup.sh, never re-created late.
 OnCalendar=*-*-* 18:00:00 Asia/Shanghai
-Persistent=true
+Persistent=false
 Unit=crypto-quant-report@1800.service
 
 [Install]

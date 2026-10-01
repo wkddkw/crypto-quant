@@ -1,0 +1,9 @@
+[Unit]
+Description=Check crypto quant catchup three minutes after boot
+
+[Timer]
+OnBootSec=3min
+Unit=crypto-quant-catchup.service
+
+[Install]
+WantedBy=timers.target
