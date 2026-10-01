@@ -263,7 +263,10 @@ def fetch_cm(asset):
         params["next_page_token"] = tok
         time.sleep(PAUSE)
     df = pd.DataFrame(rows)
-    df["ts"] = pd.to_datetime(df["time"], utc=True).astype("int64") // 10 ** 6
+    # Do not use .astype("int64") here: its unit follows the dtype's resolution, and
+    # pandas 3.0 changed the default from nanoseconds to microseconds. That silently
+    # shifts the result by 1000x. Compute epoch-milliseconds explicitly instead.
+    df["ts"] = pd.to_datetime(df["time"], utc=True).map(lambda v: int(v.timestamp() * 1000))
     df = df.rename(columns={"CapMVRVCur": "mvrv", "AdrActCnt": "adr_act"})
     df["mvrv"] = pd.to_numeric(df["mvrv"], errors="coerce")
     df["adr_act"] = pd.to_numeric(df["adr_act"], errors="coerce")
